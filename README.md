@@ -25,7 +25,7 @@ If sd-phone is useful to you, please ⭐ the repo. Issues and pull requests are 
 [![Documentation](https://img.shields.io/badge/Docs-docs.samueldev.shop-94DD0C)](https://docs.samueldev.shop/resources/phone/)
 
 ![Framework](https://img.shields.io/badge/Framework-QBCore%20%7C%20QBox%20%7C%20ESX-3b82f6)
-![Voice](https://img.shields.io/badge/Voice-pma--voice-3b82f6)
+![Voice](https://img.shields.io/badge/Voice-pma--voice%20%7C%20SaltyChat%20%7C%20YaCA-3b82f6)
 ![Compatibility](https://img.shields.io/badge/lb--phone-drop--in%20compatible-3b82f6)
 
 [**Live demo**](https://fivem.samueldev.shop/phone) · [**Documentation**](https://docs.samueldev.shop/resources/phone/) · [**Store**](https://fivem.samueldev.shop) · [**Discord**](https://discord.gg/FzPehMQaBQ)
@@ -93,7 +93,7 @@ The Camera, Photos and Voice Memos apps need somewhere to store what they captur
 
 | | |
 |---|---|
-| **Communication** | Phone (1:1, group and company calls over pma-voice), Messages (SMS, group threads, GIFs, money and location cards), Mail (multi-account, global inboxes), Groups, Dark Chat, Radio, Find Friends |
+| **Communication** | Phone (1:1, group and company calls over pma-voice, SaltyChat or YaCA), Messages (SMS, group threads, GIFs, money and location cards), Mail (multi-account, global inboxes), Groups, Dark Chat, Radio, Find Friends |
 | **Social** | Photogram (posts, stories, DMs, real live video streaming), Birdy, Cherry, Vibez, Streaks, all on a shared accounts engine with registration, sign-in, and password resets delivered in-game |
 | **Camera & media** | Camera (live game view: photos, video with voice capture, selfie mode), Photos, Music (with AirShare library sharing), Voice Memos |
 | **World** | Maps (CDN-streamed tiles, routing, pins), Garages, Homes, Wallet, Services (company directory, dispatch messaging, phone multijob), Ryde (player-to-player ride hailing), Weazel News, Pages, Marketplace, Review, Weather, Stocks |
@@ -182,7 +182,7 @@ end)
 |---|---|
 | Frameworks | QBCore, QBox, ESX (auto-detected) |
 | Inventories | ox_inventory, tgiann-inventory, qb-inventory, qs-inventory(-pro), origen_inventory, codem-inventory, jaksam_inventory, lj-inventory, ps-inventory |
-| Voice | pma-voice |
+| Voice | pma-voice, SaltyChat, YaCA (auto-detected) |
 | Housing | 9 housing systems for the Homes app |
 | Garages | 10 garage systems for the Garages app |
 | Notify | ox_lib (default), lation_ui (opt-in), framework-native fallback |

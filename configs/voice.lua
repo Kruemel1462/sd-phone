@@ -3,15 +3,20 @@
 -- real WebRTC mesh (each nearby player's client streams their mic peer-to-peer, mixed into the
 -- recording).
 --
--- Provider/Resources pick which voice script carries CALLS and the RADIO. The two supported
--- dialects are not interchangeable: pma-voice takes numeric call channels and Mumble natives,
+-- Provider/Resources pick which voice script carries CALLS and the RADIO. The three supported
+-- dialects are not interchangeable: pma-voice takes numeric call channels and Mumble natives;
 -- SaltyChat takes string call identifiers and has no mic-mute API at all, so the phone hides its
--- in-call Mute button there rather than offering one that does nothing.
+-- in-call Mute button there rather than offering one that does nothing; YaCA has no call channel
+-- of any kind, so the phone meshes its participants pair by pair and mutes server-side.
 return {
     -- Which voice API the phone speaks. 'auto' takes the first started entry of Resources
-    -- below; naming a dialect outright pins it, which is what you want when both scripts are
+    -- below; naming a dialect outright pins it, which is what you want when two scripts are
     -- installed or the resource has been renamed.
-    --   'auto' | 'pma-voice' | 'saltychat'
+    --   'auto' | 'pma-voice' | 'saltychat' | 'yaca-voice'
+    --
+    -- Running YaCA with its SaltyChat compatibility bridge? Leave this on 'auto' to get NATIVE
+    -- YaCA, which is the better of the two (real speakerphone, working Mute button). Pin
+    -- 'saltychat' only if you specifically want the phone to go through the bridge.
     Provider = 'auto',
 
     -- Detection order for 'auto', and the map from a resource name to the dialect it speaks.
@@ -19,7 +24,21 @@ return {
     -- called something else still speaks 'saltychat'.
     Resources = {
         { name = 'pma-voice', provider = 'pma-voice' },
+        { name = 'yaca-voice', provider = 'yaca-voice' },
         { name = 'saltychat', provider = 'saltychat' },
+    },
+
+    -- YaCA only; ignored on the other backends. YaCA gives each player SEVERAL radios at once
+    -- rather than one, so the phone has to be told which of them is its own.
+    Yaca = {
+        -- The radio slot the phone's Radio app drives. Move it off 1 if a job radio script
+        -- already owns the primary slot.
+        RadioChannel     = 1,
+
+        -- Switching the phone radio on also makes that slot YaCA's ACTIVE channel, so the
+        -- player's push-to-talk keys the phone. Set false to leave the active channel alone,
+        -- and the phone's radio becomes receive-only unless the player selects its slot.
+        SetActiveChannel = true,
     },
 
     -- Master switch. When false, recordings carry only the recorder's own voice. Note:
@@ -34,10 +53,10 @@ return {
     MaxNearbyVoices    = 6,
 
     -- Only capture a nearby player while they're actually transmitting in-game
-    -- (pma-voice / Mumble push-to-talk or open mic), so silent/muted players
-    -- aren't recorded and you capture what you'd actually hear. Set false to
-    -- stream their mic the whole time (or for non-Mumble voice like SaltyChat,
-    -- where the talking state can't be read).
+    -- (push-to-talk or open mic), so silent/muted players aren't recorded and
+    -- you capture what you'd actually hear. Every supported backend can report
+    -- this: pma-voice through Mumble, SaltyChat and YaCA through their own talk
+    -- events. Set false to stream their mic the whole time instead.
     TransmitGated      = true,
 
     -- 'cloudflare' provisions TURN relays (needed for players on different networks) from
