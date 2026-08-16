@@ -68,5 +68,6 @@ return {
     yaca = {
         radioChannel     = math.floor(tonumber(Y.RadioChannel) or 1),
         setActiveChannel = Y.SetActiveChannel ~= false,
+        nativeSpeaker    = Y.NativeSpeaker ~= false,
     },
 }

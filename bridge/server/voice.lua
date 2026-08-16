@@ -31,14 +31,44 @@ local yacaMuted = {}
 ---@type table<number, boolean> Sources whose speakerphone the phone last turned on.
 local yacaSpeaker = {}
 
+---@type table<string, boolean> Export names already reported as failing.
+local yacaWarned = {}
+
+---Calls a YaCA export and SAYS SO when it fails, rather than swallowing it.
+---
+---Every backend call in this file has to be guarded - a missing or renamed export raises rather
+---than returning nil - but a guard that discards the error turns "the speakerphone does nothing"
+---into a bug nobody can chase. One line per export name names the culprit without flooding a
+---console during a live call.
+---@param name string export name, for the message
+---@param fn fun() the call itself
+---@return boolean ok
+local function yacaCall(name, fn)
+    local ok, err = pcall(fn)
+    if not ok and not yacaWarned[name] then
+        yacaWarned[name] = true
+        print(('^1[sd-phone:voice]^0 %s export %s failed: %s'):format(RESOURCE, name, err))
+    end
+    return ok
+end
+
 ---Detected API dialect ('pma-voice' | 'saltychat' | 'yaca-voice'), or nil. Read-only.
 ---@return string|nil
 function voice.provider() return PROVIDER end
 
 ---Whether the backend has a real speakerphone of its own. When false the caller has to build one,
 ---which is what the proximity sweep in server/calls/actions.lua is for.
+---
+---YaCA's is claimed only when the config still says so, because whether it actually carries is a
+---property of the YaCA INSTALL rather than of the dialect: enablePhoneSpeaker sets a state bag
+---that YaCA's own client loop has to act on, and nothing readable from Lua says whether it will.
+---An operator whose YaCA speaker stays silent flips Yaca.NativeSpeaker off and gets the phone's
+---own proximity circle instead of a button that does nothing.
 ---@return boolean
-function voice.nativeSpeaker() return PROVIDER == 'saltychat' or PROVIDER == 'yaca-voice' end
+function voice.nativeSpeaker()
+    if PROVIDER == 'yaca-voice' then return backend.yaca.nativeSpeaker end
+    return PROVIDER == 'saltychat'
+end
 
 ---Re-asserts mute and speakerphone for everyone still meshed into a YaCA channel.
 ---
@@ -54,10 +84,10 @@ local function yacaResync(channel)
     if not members or not RESOURCE then return end
     for src in pairs(members) do
         if yacaMuted[src] then
-            pcall(function() exports[RESOURCE]:muteOnPhone(src, true) end)
+            yacaCall('muteOnPhone', function() exports[RESOURCE]:muteOnPhone(src, true) end)
         end
         if yacaSpeaker[src] then
-            pcall(function() exports[RESOURCE]:enablePhoneSpeaker(src, true) end)
+            yacaCall('enablePhoneSpeaker', function() exports[RESOURCE]:enablePhoneSpeaker(src, true) end)
         end
     end
 end
@@ -71,7 +101,7 @@ local function yacaLeave(src, teardown)
     yacaMuted[src]   = nil
 
     if teardown and yacaSpeaker[src] and RESOURCE then
-        pcall(function() exports[RESOURCE]:enablePhoneSpeaker(src, false) end)
+        yacaCall('enablePhoneSpeaker', function() exports[RESOURCE]:enablePhoneSpeaker(src, false) end)
     end
     yacaSpeaker[src] = nil
 
@@ -82,7 +112,7 @@ local function yacaLeave(src, teardown)
 
     if teardown and RESOURCE then
         for peer in pairs(members) do
-            pcall(function() exports[RESOURCE]:callPlayer(src, peer, false) end)
+            yacaCall('callPlayer', function() exports[RESOURCE]:callPlayer(src, peer, false) end)
         end
     end
 
@@ -105,7 +135,7 @@ local function yacaJoin(src, channel)
 
     if RESOURCE then
         for peer in pairs(members) do
-            pcall(function() exports[RESOURCE]:callPlayer(src, peer, true) end)
+            yacaCall('callPlayer', function() exports[RESOURCE]:callPlayer(src, peer, true) end)
         end
     end
 
@@ -172,7 +202,7 @@ function voice.setPhoneSpeaker(src, on)
         on = on == true
         if on and not yacaChannel[src] then return false end
         yacaSpeaker[src] = on or nil
-        return pcall(function() exports[RESOURCE]:enablePhoneSpeaker(src, on) end)
+        return yacaCall('enablePhoneSpeaker', function() exports[RESOURCE]:enablePhoneSpeaker(src, on) end)
     end
 
     if PROVIDER ~= 'saltychat' then return false end
@@ -190,7 +220,7 @@ function voice.setPlayerMuted(src, on)
     if PROVIDER ~= 'yaca-voice' or not RESOURCE then return false end
     on = on == true
     yacaMuted[src] = on or nil
-    return pcall(function() exports[RESOURCE]:muteOnPhone(src, on) end)
+    return yacaCall('muteOnPhone', function() exports[RESOURCE]:muteOnPhone(src, on) end)
 end
 
 -- The client bridge's Mute button on YaCA, which has no client-side setter. Self-scoped: a player

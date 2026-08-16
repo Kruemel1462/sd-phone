@@ -39,6 +39,14 @@ return {
         -- player's push-to-talk keys the phone. Set false to leave the active channel alone,
         -- and the phone's radio becomes receive-only unless the player selects its slot.
         SetActiveChannel = true,
+
+        -- Use YaCA's own speakerphone (enablePhoneSpeaker), where bystanders OVERHEAR the call
+        -- without being able to talk into it. Set false if it stays silent on your install -
+        -- the phone then builds its own speaker instead, pulling nearby players onto the call
+        -- so they can hear AND talk. Note that YaCA's speaker only carries the other party's
+        -- voice outward; for the far end to hear the people standing around the speaker holder,
+        -- YaCA's own config needs phoneHearPlayersNearby = true.
+        NativeSpeaker    = true,
     },
 
     -- Master switch. When false, recordings carry only the recorder's own voice. Note:

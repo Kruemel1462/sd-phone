@@ -22,6 +22,26 @@ local YACA_SET_ACTIVE <const> = backend.yaca.setActiveChannel
 ---scripts, so no app module has to know which one is running.
 local voice = {}
 
+---@type table<string, boolean> Export names already reported as failing.
+local yacaWarned = {}
+
+---Calls a YaCA export and SAYS SO when it fails, rather than swallowing it.
+---
+---Every backend call here has to be guarded - a missing or renamed export raises rather than
+---returning nil - but a guard that discards the error turns "the radio does nothing" into a bug
+---nobody can chase. One line per export name names the culprit without flooding the console.
+---@param name string export name, for the message
+---@param fn fun() the call itself
+---@return boolean ok
+local function yacaCall(name, fn)
+    local ok, err = pcall(fn)
+    if not ok and not yacaWarned[name] then
+        yacaWarned[name] = true
+        print(('^1[sd-phone:voice]^0 %s export %s failed: %s'):format(RESOURCE, name, err))
+    end
+    return ok
+end
+
 ---@type boolean Local transmit state, tracked from the backend's own event because neither
 ---TeamSpeak backend has a native to poll. Mumble backends read the native instead and never
 ---touch this.
@@ -116,7 +136,7 @@ local function yacaApplyVolume()
     if not RESOURCE or yacaVolume == nil then return end
     -- Note the argument order: YaCA's export is (volume, channel), not (channel, volume), and it
     -- clamps to 0.0-1.0 rather than taking the phone's 0-100.
-    pcall(function() exports[RESOURCE]:changeRadioChannelVolumeRaw(yacaVolume / 100.0, YACA_SLOT) end)
+    yacaCall('changeRadioChannelVolumeRaw', function() exports[RESOURCE]:changeRadioChannelVolumeRaw(yacaVolume / 100.0, YACA_SLOT) end)
 end
 
 ---Joins or leaves the phone's YaCA radio slot.
@@ -135,22 +155,22 @@ local function yacaSetRadio(channel)
     if channel <= 0 then
         if not yacaRadioOn then return true end
         yacaRadioOn = false
-        return pcall(function() exports[RESOURCE]:changeRadioFrequencyRaw(YACA_SLOT, '0') end)
+        return yacaCall('changeRadioFrequencyRaw', function() exports[RESOURCE]:changeRadioFrequencyRaw(YACA_SLOT, '0') end)
     end
 
     -- Enabled on every join rather than once: setActiveRadioChannel and the volume export both
     -- refuse while the radio is off, and enableRadio itself no-ops until YaCA's TeamSpeak plugin
     -- has connected - so an attempt made too early has to be able to heal on the next one.
-    pcall(function() exports[RESOURCE]:enableRadio(true) end)
+    yacaCall('enableRadio', function() exports[RESOURCE]:enableRadio(true) end)
     yacaRadioOn = true
 
     if YACA_SET_ACTIVE then
-        pcall(function() exports[RESOURCE]:setActiveRadioChannel(YACA_SLOT) end)
+        yacaCall('setActiveRadioChannel', function() exports[RESOURCE]:setActiveRadioChannel(YACA_SLOT) end)
     end
     yacaApplyVolume()
 
     local frequency = string.format('%.1f', channel / 10)
-    return pcall(function() exports[RESOURCE]:changeRadioFrequencyRaw(YACA_SLOT, frequency) end)
+    return yacaCall('changeRadioFrequencyRaw', function() exports[RESOURCE]:changeRadioFrequencyRaw(YACA_SLOT, frequency) end)
 end
 
 ---Joins or leaves a radio channel. Channel 0 means leave.
