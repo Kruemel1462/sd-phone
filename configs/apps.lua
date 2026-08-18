@@ -30,6 +30,13 @@ return {
     -- looked up from there.
     Dock = { 'phone', 'messages', 'camera', 'photos' },
 
+    -- Apps seeded onto page one of a BRAND-NEW phone before the rest spill onto page two. Once a
+    -- player has arranged their own home screen theirs wins, so this only decides first impressions.
+    -- 0 fills the page, and a value larger than the grid is clamped to it: a page holds 24 icons at
+    -- the default icon size, 35 at the small one and 15 at the large, which each player picks in
+    -- Settings, so the clamp is what keeps this honest across all three.
+    FirstPageApps = 0,
+
     -- All apps. The homescreen renders every app whose `id` doesn't appear in
     -- `Dock` in a 4-column grid, in the order defined below. `route` is the SPA
     -- path the React app navigates to when the icon is tapped.
@@ -72,18 +79,18 @@ return {
         { id = 'appstore', label = 'App Store', icon = 'appstore', route = '/appstore', accent = '#0a84ff', base = true, enabled = true },
         { id = 'calculator', label = 'Calculator', icon = 'calculator', route = '/calculator', accent = '#333335', base = true, enabled = true },
         { id = 'passwords', label = 'Passwords', icon = 'passwords', route = '/passwords', accent = '#1c1c1e', base = true, enabled = true },
-        { id = 'cookie', label = 'Cookie', icon = 'cookie', route = '/cookie', accent = '#C77D2E', base = true, enabled = true },
-        { id = 'wordle', label = 'Penta', icon = 'wordle', route = '/wordle', accent = '#6AAA64', base = true, enabled = true },
-        { id = 'flappy', label = 'Flappy', icon = 'flappy', route = '/flappy', accent = '#4EC0CA', base = true, enabled = true },
-        { id = 'blocks', label = 'Blocks', icon = 'blocks', route = '/blocks', accent = '#7C4DFF', base = true, enabled = true },
-        { id = 'blackjack', label = 'Blackjack', icon = 'blackjack', route = '/blackjack', accent = '#157347', base = true, enabled = true },
-        { id = 'climber', label = 'Climber', icon = 'climber', route = '/climber', accent = '#8BC34A', base = true, enabled = true },
-        { id = 'connectfour', label = 'Connect 4', icon = 'connectfour', route = '/connectfour', accent = '#1E66D0', base = true, enabled = true },
-        { id = 'chess', label = 'Chess', icon = 'chess', route = '/chess', accent = '#3B3B3B', base = true, enabled = true },
-        { id = 'battleship', label = 'Battleship', icon = 'battleship', route = '/battleship', accent = '#17A0B5', base = true, enabled = true },
-        { id = 'vibez', label = 'Vibez', icon = 'vibez', route = '/vibez', accent = '#A855F7', base = true, enabled = false },
-        { id = 'weazelnews', label = 'Weazel News', icon = 'weazelnews', route = '/weazelnews', accent = '#C8102E', base = true, enabled = true },
-        { id = 'streaks', label = 'Streaks', icon = 'streaks', route = '/streaks', accent = '#FF7A1A', base = true, enabled = true },
+        { id = 'cookie', label = 'Cookie', icon = 'cookie', route = '/cookie', accent = '#C77D2E', base = false, enabled = true },
+        { id = 'wordle', label = 'Penta', icon = 'wordle', route = '/wordle', accent = '#6AAA64', base = false, enabled = true },
+        { id = 'flappy', label = 'Flappy', icon = 'flappy', route = '/flappy', accent = '#4EC0CA', base = false, enabled = true },
+        { id = 'blocks', label = 'Blocks', icon = 'blocks', route = '/blocks', accent = '#7C4DFF', base = false, enabled = true },
+        { id = 'blackjack', label = 'Blackjack', icon = 'blackjack', route = '/blackjack', accent = '#157347', base = false, enabled = true },
+        { id = 'climber', label = 'Climber', icon = 'climber', route = '/climber', accent = '#8BC34A', base = false, enabled = true },
+        { id = 'connectfour', label = 'Connect 4', icon = 'connectfour', route = '/connectfour', accent = '#1E66D0', base = false, enabled = true },
+        { id = 'chess', label = 'Chess', icon = 'chess', route = '/chess', accent = '#3B3B3B', base = false, enabled = true },
+        { id = 'battleship', label = 'Battleship', icon = 'battleship', route = '/battleship', accent = '#17A0B5', base = false, enabled = true },
+        { id = 'vibez', label = 'Vibez', icon = 'vibez', route = '/vibez', accent = '#A855F7', base = false, enabled = false },
+        { id = 'weazelnews', label = 'Weazel News', icon = 'weazelnews', route = '/weazelnews', accent = '#C8102E', base = false, enabled = true },
+        { id = 'streaks', label = 'Streaks', icon = 'streaks', route = '/streaks', accent = '#FF7A1A', base = false, enabled = true },
 
         -- The three terminals run on BOTH devices. The same code lays itself out per screen: a
         -- menu root that pushes one section at a time on the phone, the multi-tab browser on the
@@ -106,15 +113,18 @@ return {
         { id = 'emsmdt', label = 'EMS', icon = 'emsmdt', route = '/emsmdt', accent = '#E11D48', base = true, enabled = true },
         { id = 'dojmdt', label = 'DOJ', icon = 'dojmdt', route = '/dojmdt', accent = '#6D28D9', base = true, enabled = true },
 
-        -- Racing runs on both devices too, and unlike the terminals it carries no job gate: every
-        -- player gets the board. Its backend has its own switch, `Enabled` in configs/racing.lua;
-        -- with that off this row shows an app with nothing behind it, so turn both off together.
-        -- Keep `base = true` so the board is there the moment a race is posted.
-        { id = 'racing', label = 'Racing', icon = 'racing', route = '/racing', accent = '#0A8C72', base = true, enabled = true },
+        -- Racing runs on both devices too, and unlike the terminals it carries no job gate. Its
+        -- backend has its own switch, `Enabled` in configs/racing.lua; with that off this row shows
+        -- an app with nothing behind it, so turn both off together.
+        --
+        -- It ships earned rather than given: `consume` means using a `racing_usb` spends the item
+        -- and installs the board on that character for good. The item has to exist in your inventory
+        -- config or nobody can unlock it - see the snippet in the header above, and drop `requires`
+        -- entirely if you would rather every player just have it.
+        { id = 'racing', label = 'Racing', icon = 'racing', route = '/racing', accent = '#0A8C72', base = true, enabled = true, requires = { item = 'racing_usb', consume = true } },
 
-        -- Every row above ships `base = true`, so the phone arrives with the full set installed and
-        -- the App Store lists nothing. Flip a row to `base = false` to put it behind a download,
-        -- which is also what `wifi` needs to mean anything:
+        -- `base = false` rows are the App Store's catalog; flip one to `true` to ship it installed
+        -- instead. `wifi` only means anything on a downloadable row, since it gates the download:
         -- { id = 'darkchat', label = 'Dark Chat', icon = 'darkchat', route = '/darkchat', accent = '#1c1c1e', base = false, enabled = true, wifi = 'mazebank' },
 
         -- `requires` examples, none of them live - copy the tail of one onto a real row.

@@ -125,6 +125,7 @@ function saveSetup(s: SetupSaved): void {
 interface ViewState {
     apps:          AppDef[];
     dock:          string[];
+    firstPageApps: number;
     wallpaperHome: string;
     wallpaperLock: string;
     carrier:       string;
@@ -446,6 +447,7 @@ function AppContent() {
         const nextView: ViewState = {
             apps:          data.apps,
             dock:          data.dock,
+            firstPageApps: typeof data.firstPageApps === 'number' ? data.firstPageApps : 12,
             wallpaperHome: data.wallpaper.home,
             wallpaperLock: data.wallpaper.lock,
             carrier:       data.carrier,
@@ -623,6 +625,16 @@ function AppContent() {
     }, []);
 
     const handleSwitcherDismiss  = useCallback(() => setSwitcherClosing(true), []);
+
+    const escapeLadder = useCallback(() => {
+        if (switcherOpen)            { setSwitcherClosing(true); return; }
+        if (currentApp && !isClosing) { handleCloseApp();        return; }
+        void fetchNui('sd-phone:close');
+        setLeaving(true);
+    }, [switcherOpen, currentApp, isClosing, handleCloseApp]);
+
+    useNuiEvent('sd-phone:escape', escapeLadder);
+
     const handleSwitcherReady    = useCallback(() => setSwitcherReady(true), []);
     const handleSwitcherDone     = useCallback(() => {
         if (!switcherClosing) return;
@@ -1250,10 +1262,8 @@ function AppContent() {
             ));
 
             if (e.key === 'Escape') {
-                if (switcherOpen)            { handleSwitcherDismiss(); return; }
-                if (currentApp && !isClosing) { handleCloseApp();        return; }
-                void fetchNui('sd-phone:close');
-                setLeaving(true);
+                escapeLadder();
+                return;
             }
             if ((e.key === 'l' || e.key === 'L') && !locked && !typing) {
                 setLocked(true);
@@ -1266,7 +1276,7 @@ function AppContent() {
         }
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-    }, [locked, currentApp, isClosing, switcherOpen, handleCloseApp, handleSwitcherDismiss]);
+    }, [locked, escapeLadder]);
 
     useEffect(() => {
         if (!isFiveM) return;
@@ -1576,6 +1586,7 @@ function AppContent() {
                             key={`${homeDensity}:${dockStyle}`}
                             apps={effectiveApps}
                             dock={view.dock}
+                            firstPageApps={view.firstPageApps}
                             wallpaper={homeWallpaper}
                             onLaunchApp={launchApp}
                             onUninstall={handleUninstallApp}
