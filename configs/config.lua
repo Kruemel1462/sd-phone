@@ -5,7 +5,7 @@
 
 local config = {
     -- Locale file under `locales/<Locale>.json`. Falls back to `en` if missing.
-    Locale = 'en',
+    Locale = 'de',
 
     -- Debug / dev logging toggle.
     Debug  = false,

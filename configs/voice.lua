@@ -46,7 +46,7 @@ return {
         -- so they can hear AND talk. Note that YaCA's speaker only carries the other party's
         -- voice outward; for the far end to hear the people standing around the speaker holder,
         -- YaCA's own config needs phoneHearPlayersNearby = true.
-        NativeSpeaker    = true,
+        NativeSpeaker    = false,
     },
 
     -- Master switch. When false, recordings carry only the recorder's own voice. Note:
