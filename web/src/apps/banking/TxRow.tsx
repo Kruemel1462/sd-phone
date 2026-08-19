@@ -1,5 +1,3 @@
-import { memo } from 'react';
-
 import { getCategories, type Category } from './data';
 import { txTimeLabel, type BankTx } from './bankingApi';
 import { TxAvatar } from './TxAvatar';
@@ -20,7 +18,8 @@ function catMeta(cat: string) {
     return categories[(cat in categories ? cat : 'transfer') as Category];
 }
 
-const TxRow = memo(function TxRow({ tx, onSelect, hideAmount }: { tx: BankTx; onSelect?: (tx: BankTx) => void; hideAmount: boolean }) {
+function TxRow({ tx, onSelect }: { tx: BankTx; onSelect?: (tx: BankTx) => void }) {
+    const hideAmount = useStreamerHidden('transactions');
     const meta       = catMeta(tx.category);
     const isIncome   = tx.amount > 0;
     const selectable = !!onSelect && !!tx.peerNumber;
@@ -53,17 +52,14 @@ const TxRow = memo(function TxRow({ tx, onSelect, hideAmount }: { tx: BankTx; on
         );
     }
     return <div className="flex items-center gap-3.5 px-4 py-[18px]">{inner}</div>;
-});
-
-const ROW_BOX = { contentVisibility: 'auto', containIntrinsicSize: 'auto 87px' } as const;
+}
 
 export function TxRows({ items, onSelect }: { items: BankTx[]; onSelect?: (tx: BankTx) => void }) {
-    const hideAmount = useStreamerHidden('transactions');
     return (
         <div className="overflow-hidden rounded-[16px] bg-surface shadow-sm">
             {items.map((tx, i) => (
-                <div key={tx.id} style={ROW_BOX}>
-                    <TxRow tx={tx} onSelect={onSelect} hideAmount={hideAmount} />
+                <div key={tx.id}>
+                    <TxRow tx={tx} onSelect={onSelect} />
                     {i < items.length - 1 && <div className="pointer-events-none mx-[6%] h-[0.5px] bg-black/15 dark:bg-white/15" />}
                 </div>
             ))}

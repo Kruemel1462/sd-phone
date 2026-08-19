@@ -6,7 +6,7 @@ import {
     Type, Wrench, Zap,
 } from 'lucide-react';
 
-import { getCatalogVersion, t } from '@/i18n';
+import { t } from '@/i18n';
 
 type AccountKind = 'checking' | 'savings' | 'credit';
 
@@ -61,14 +61,8 @@ export interface CategoryMeta {
     color: string;
 }
 
-let categoryCache: Record<Category, CategoryMeta> | null = null;
-let categoryCacheVersion = -1;
-
 export function getCategories(): Record<Category, CategoryMeta> {
-    const version = getCatalogVersion();
-    if (categoryCache && categoryCacheVersion === version) return categoryCache;
-    categoryCacheVersion = version;
-    categoryCache = {
+    return {
         food:          { label: t('banking.catFood', 'Food & Drink'),  icon: Pizza,        color: '#ff9f0a' },
         groceries:     { label: t('banking.catGroceries', 'Groceries'),     icon: ShoppingCart, color: '#34c759' },
         shopping:      { label: t('banking.catShopping', 'Shopping'),      icon: ShoppingBag,  color: '#ff375f' },
@@ -90,7 +84,6 @@ export function getCategories(): Record<Category, CategoryMeta> {
         ryde:          { label: t('banking.catRyde', 'Ryde'),          icon: Car,          color: '#1c1c1e' },
         streaks:       { label: t('banking.catStreaks', 'Streaks'),       icon: Flame,        color: '#FF7A1A' },
     };
-    return categoryCache;
 }
 
 export interface Transaction {

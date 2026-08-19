@@ -291,14 +291,14 @@ end
 ---@param on boolean
 function actions.setSpeaker(source, on)
     if voice.nativeSpeaker() then
-        local s = sessionForSource(source)
+        local _, s = sessionForSource(source)
         if on and (not s or s.state ~= 'active') then return end
         voice.setPhoneSpeaker(source, on == true)
         return
     end
 
     if not on then dropSpeaker(source) return end
-    local s = sessionForSource(source)
+    local _, s = sessionForSource(source)
     if not s or s.state ~= 'active' then return end
     speakerOn[source] = s.channel
     if speakerThreadRunning then return end

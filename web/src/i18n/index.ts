@@ -56,7 +56,6 @@ export const SUPPORTED_LOCALES: LocaleOption[] = [
 
 let active = catalogs.en;
 let currentCode = 'en';
-let catalogVersion = 0;
 
 /** Select the active language (from config.Locale, or a player's saved pick).
  *  Falls back to English for an unknown code. Resolves once the catalog is
@@ -66,25 +65,20 @@ export function setLocale(lang: string): Promise<void> {
     currentCode = code;
     if (catalogs[code]) {
         active = catalogs[code];
-        catalogVersion += 1;
         return Promise.resolve();
     }
     return loaders[code]()
         .then(m => {
             catalogs[code] = flatten(m.default as Record<string, unknown>, '', {});
-            if (currentCode === code) { active = catalogs[code]; catalogVersion += 1; }
+            if (currentCode === code) active = catalogs[code];
         })
         .catch(() => {
-            if (currentCode === code) { currentCode = 'en'; active = catalogs.en; catalogVersion += 1; }
+            if (currentCode === code) { currentCode = 'en'; active = catalogs.en; }
         });
 }
 
 export function getLocale(): string {
     return currentCode;
-}
-
-export function getCatalogVersion(): number {
-    return catalogVersion;
 }
 
 const LOCALE_TAGS: Record<string, string> = {

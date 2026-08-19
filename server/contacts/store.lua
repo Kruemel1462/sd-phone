@@ -12,10 +12,7 @@ store.newId = newId
 ---Creates the contacts, call-log, and blocked-numbers tables idempotently, back-filling the
 ---`avatar` and `seen` columns on older installs. Run once at boot.
 function store.ensureSchema()
-    -- Other phone resources use this name with a different shape, and a bare CREATE TABLE IF NOT
-    -- EXISTS would silently keep theirs. `citizenid` is the marker: it has been in sd-phone's
-    -- contacts table since the first release, so a table without it was never ours.
-    util.ensureTable('phone_contacts', 'citizenid', [[
+    MySQL.query.await([[
         CREATE TABLE IF NOT EXISTS phone_contacts (
             id          VARCHAR(16)  NOT NULL,
             citizenid   VARCHAR(64)  NOT NULL,
@@ -46,10 +43,6 @@ function store.ensureSchema()
         MySQL.query.await('ALTER TABLE phone_contacts ADD COLUMN avatar VARCHAR(512) NULL AFTER color')
     end
 
-    -- Deliberately NOT ensureTable. Every column below is back-filled a few lines further down,
-    -- which means sd-phone's own early call logs lacked them too: no column here is old enough to
-    -- prove ownership, so a marker would move a legitimate older table aside and lose its rows.
-    -- This one adopts whatever it finds and back-fills instead.
     MySQL.query.await([[
         CREATE TABLE IF NOT EXISTS phone_calls (
             id          VARCHAR(16)  NOT NULL,
@@ -122,7 +115,7 @@ function store.ensureSchema()
         MySQL.query.await('ALTER TABLE phone_calls ALTER COLUMN seen SET DEFAULT 0')
     end
 
-    util.ensureTable('phone_blocked', 'citizenid', [[
+    MySQL.query.await([[
         CREATE TABLE IF NOT EXISTS phone_blocked (
             citizenid  VARCHAR(64) NOT NULL,
             number     VARCHAR(32) NOT NULL,

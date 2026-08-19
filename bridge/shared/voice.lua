@@ -4,10 +4,19 @@ local config = require 'configs.config'
 ---@type table Voice config (configs/voice.lua): backend pin plus the detection order.
 local V = type(config.Voice) == 'table' and config.Voice or {}
 
+---@type table YaCA-specific options (configs/voice.lua Yaca). Defaulted here rather than read
+---straight off the config so a server whose configs predate YaCA support still boots.
+local Y = type(V.Yaca) == 'table' and V.Yaca or {}
+
 ---@type { name: string, provider: string }[] Detection order used when the config omits one, so a
 ---server whose configs predate this file still resolves a backend.
+---
+---yaca-voice sits ahead of saltychat on purpose: YaCA ships a SaltyChat compatibility bridge, and
+---a server running both would otherwise resolve to the emulated dialect when the native one is
+---right there. Pin the provider if you actually want the bridge.
 local DEFAULT_RESOURCES <const> = {
     { name = 'pma-voice', provider = 'pma-voice' },
+    { name = 'yaca-voice', provider = 'yaca-voice' },
     { name = 'saltychat', provider = 'saltychat' },
 }
 
@@ -50,6 +59,15 @@ local RESOURCE, PROVIDER = detect()
 return {
     ---@type string|nil Resource name exports are invoked on, nil when no supported script runs.
     resource = RESOURCE,
-    ---@type string|nil API dialect: 'pma-voice' or 'saltychat', nil when none was found.
+    ---@type string|nil API dialect: 'pma-voice', 'saltychat' or 'yaca-voice'. nil when none was
+    ---found.
     provider = PROVIDER,
+    ---@type { radioChannel: integer, setActiveChannel: boolean } YaCA tuning, unread on other
+    ---backends. YaCA gives a player several radio SLOTS rather than one radio, so the phone has
+    ---to be told which slot is its own.
+    yaca = {
+        radioChannel     = math.floor(tonumber(Y.RadioChannel) or 1),
+        setActiveChannel = Y.SetActiveChannel ~= false,
+        nativeSpeaker    = Y.NativeSpeaker ~= false,
+    },
 }

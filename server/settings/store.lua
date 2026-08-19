@@ -49,7 +49,7 @@ end
 ---Creates the phone_settings table plus the phone_custom_ringtones and phone_notif_prefs
 ---satellite tables, backfilling columns on older installs.
 function store.ensureSchema()
-    util.ensureTable('phone_settings', 'citizenid', [[
+    MySQL.query.await([[
         CREATE TABLE IF NOT EXISTS phone_settings (
             citizenid          VARCHAR(64) NOT NULL,
             device             VARCHAR(16) NOT NULL DEFAULT 'phone',
@@ -168,7 +168,7 @@ function store.ensureSchema()
         MySQL.query.await('ALTER TABLE phone_settings MODIFY reduce_motion TINYINT NULL')
     end
 
-    util.ensureTable('phone_custom_ringtones', 'citizenid', [[
+    MySQL.query.await([[
         CREATE TABLE IF NOT EXISTS phone_custom_ringtones (
             citizenid  VARCHAR(64)  NOT NULL,
             id         VARCHAR(32)  NOT NULL,
