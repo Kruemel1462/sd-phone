@@ -1,1 +1,0 @@
-import{z as e}from"./index-CQcun05i.js";function t(e){return e?e.name||e.username:null}async function n(t){let{switchedTo:n}=await e(t);return n}export{t as n,n as t};

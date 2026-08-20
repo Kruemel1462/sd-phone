@@ -6,10 +6,10 @@
 -- different to a YouTube link to it. Opening anything up is your call, and your risk.
 return {
     -- Any YouTube video, from any player.
-    AllowYouTube = false,
+    AllowYouTube = true,
 
     -- Any direct audio file, from any host.
-    AllowAnyAudioLink = false,
+    AllowAnyAudioLink = true,
 
     -- Hosts you trust. Every file on them is allowed, so prefer a host you control.
     -- A leading dot covers subdomains: '.myserver.com' matches 'cdn.myserver.com'.

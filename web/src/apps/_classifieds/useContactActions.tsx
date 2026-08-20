@@ -5,7 +5,6 @@ import { device } from '@device';
 import { AlertDialog } from '@/ui/AlertDialog';
 import { requestOpenMail, requestOpenMessages } from '@/shell/deeplink';
 import { fetchNui, isFiveM } from '@/core/nui';
-import { formatPhone } from '@/apps/phone/data';
 import { t } from '@/i18n';
 
 export function useContactActions(): {
@@ -14,8 +13,9 @@ export function useContactActions(): {
     email:   (address: string, isSelf?: boolean) => void;
     dialog:  ReactNode;
 } {
+    // Nur noch der Hinweis-Dialog. Die Rueckfrage vor dem Anruf ist entfernt, `call` waehlt
+    // direkt - deshalb kennt der Zustand die Variante 'confirm' nicht mehr.
     const [dlg, setDlg] = useState<
-        | { kind: 'confirm'; number: string }
         | { kind: 'notice'; title: string; message: string }
         | null
     >(null);
@@ -29,7 +29,7 @@ export function useContactActions(): {
     function call(number: string, isSelf?: boolean) {
         if (isSelf) { setDlg({ kind: 'notice', title: t('classifieds.cantCall', "Can't Call"), message: t('classifieds.cantCallSelf', "You can't call yourself.") }); return; }
         const digits = (number ?? '').replace(/\D/g, '');
-        if (digits) setDlg({ kind: 'confirm', number: digits });
+        if (digits && isFiveM && device.calls) void fetchNui('sd-phone:call:dial', { number: digits });
     }
 
     function email(address: string, isSelf?: boolean) {
@@ -39,22 +39,7 @@ export function useContactActions(): {
     }
 
     let dialog: ReactNode = null;
-    if (dlg?.kind === 'confirm') {
-        dialog = (
-            <AlertDialog
-                title={t('classifieds.call', 'Call')}
-                message={t('classifieds.callConfirm', 'Call {number}?', { number: formatPhone(dlg.number) })}
-                cancelLabel={t('classifieds.cancel', 'Cancel')}
-                confirmLabel={t('classifieds.call', 'Call')}
-                onCancel={() => setDlg(null)}
-                onConfirm={() => {
-                    const num = dlg.number;
-                    setDlg(null);
-                    if (isFiveM && device.calls) void fetchNui('sd-phone:call:dial', { number: num });
-                }}
-            />
-        );
-    } else if (dlg?.kind === 'notice') {
+    if (dlg?.kind === 'notice') {
         dialog = (
             <AlertDialog
                 title={dlg.title}

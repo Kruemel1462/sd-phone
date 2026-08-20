@@ -110,7 +110,6 @@ export function ChatView({ conv, totalUnread, contacts, myNumber, onBack, onSend
     const [locSheet, setLocSheet] = useState<Message | null>(null);
     const [locShare, setLocShare] = useState<LocShareStatus | null>(null);
     const [confirmLiveShare, setConfirmLiveShare] = useState<LocShareStatus | null>(null);
-    const [callConfirm, setCallConfirm] = useState<null | 'voice' | 'video'>(null);
     const [dialError, setDialError] = useState<string | null>(null);
     const [preview, setPreview] = useState<string | null>(null);
     const [savedPreview, setSavedPreview] = useState(false);
@@ -237,6 +236,18 @@ export function ChatView({ conv, totalUnread, contacts, myNumber, onBack, onSend
 
     const name = conv.groupName ?? conv.participants[0]?.name ?? t('messages.unknown', 'Unknown');
 
+    // Direkt waehlen, ohne Rueckfrage. Video- und Sprachbutton teilen sich den Aufruf, weil der
+    // bisherige Bestaetigungsdialog fuer beide Faelle ebenfalls dialCall(num, name) ohne das
+    // video-Flag ausgeloest hat - das Verhalten bleibt damit unveraendert.
+    const startCall = () => {
+        const num = conv.participants[0]?.phone ?? conv.participants[0]?.id;
+        if (!num) return;
+
+        void dialCall(num, name).then(res => {
+            if (!res.success) setDialError(res.message ?? t('messages.unableToPlaceCall', 'Unable to place call'));
+        });
+    };
+
     // For a 1:1 thread with a number that isn't saved yet, offer to add it as a contact.
     // Service short codes (5-digit app senders, password resets) aren't people: real player
     // numbers are 10 digits (7+ on servers with imported numbers), so shorter senders hide it.
@@ -338,10 +349,10 @@ export function ChatView({ conv, totalUnread, contacts, myNumber, onBack, onSend
                     <div className="flex flex-1 items-center justify-end gap-[18px] pr-1.5">
                         {!conv.groupName && device.calls && (
                             <>
-                                <button type="button" onClick={() => setCallConfirm('voice')} className="text-ios-blue active:opacity-60">
+                                <button type="button" onClick={startCall} className="text-ios-blue active:opacity-60">
                                     <Phone className="h-[28px] w-[28px]" strokeWidth={2} />
                                 </button>
-                                <button type="button" onClick={() => setCallConfirm('video')} className="text-ios-blue active:opacity-60">
+                                <button type="button" onClick={startCall} className="text-ios-blue active:opacity-60">
                                     <Video className="h-[28px] w-[28px]" strokeWidth={2} />
                                 </button>
                             </>
@@ -633,26 +644,6 @@ export function ChatView({ conv, totalUnread, contacts, myNumber, onBack, onSend
                     confirmLabel={confirmLiveShare.exists ? t('messages.share', 'Share') : t('messages.sendRequest', 'Send Request')}
                     onCancel={() => setConfirmLiveShare(null)}
                     onConfirm={() => { startLiveShare(confirmLiveShare); setConfirmLiveShare(null); }}
-                />
-            )}
-
-            {callConfirm && (
-                <AlertDialog
-                    title={callConfirm === 'video' ? t('messages.videoCall', 'Video Call') : t('messages.call', 'Call')}
-                    message={callConfirm === 'video'
-                        ? t('messages.confirmVideoCall', 'Are you sure you want to video call {name}?', { name })
-                        : t('messages.confirmCall', 'Call {name}?', { name })}
-                    cancelLabel={t('common.cancel', 'Cancel')}
-                    confirmLabel={callConfirm === 'video' ? t('messages.videoCall', 'Video Call') : t('messages.call', 'Call')}
-                    onCancel={() => setCallConfirm(null)}
-                    onConfirm={() => {
-                        const num = conv.participants[0]?.phone ?? conv.participants[0]?.id;
-                        setCallConfirm(null);
-                        if (!num) return;
-                        void dialCall(num, name).then(res => {
-                            if (!res.success) setDialError(res.message ?? t('messages.unableToPlaceCall', 'Unable to place call'));
-                        });
-                    }}
                 />
             )}
 

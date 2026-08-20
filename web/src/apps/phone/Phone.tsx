@@ -8,7 +8,7 @@ import { PhoneTabBar, type PhoneTab } from './PhoneTabBar';
 import { AlertDialog } from '@/ui/AlertDialog';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { useSessionState } from '@/hooks/useSessionState';
-import { formatPhone, toCallEntry, type Contact } from './data';
+import { toCallEntry, type Contact } from './data';
 import {
     updateContactApi, deleteContactApi,
     setFavoriteApi, saveCardApi, type CardOverrides,
@@ -37,7 +37,6 @@ export function Phone({ onClose: _onClose }: { onClose: () => void }) {
     }, [tab]);
     const { contacts, recents: recentsRaw, myNumber, myName, card } =
         useContacts('contacts', 'recents', 'myNumber', 'myName', 'card');
-    const [callTarget, setCallTarget] = useState<CallTarget | null>(null);
     const [dialError,  setDialError]  = useState<string | null>(null);
 
     useEffect(() => {
@@ -104,7 +103,7 @@ export function Phone({ onClose: _onClose }: { onClose: () => void }) {
                             myNumber={myNumber}
                             myName={myName}
                             card={card}
-                            onRequestCall={setCallTarget}
+                            onRequestCall={target => { void placeCall(target); }}
                             onAddContact={addContact}
                             onUpdateContact={updateContact}
                             onSaveCard={updateCard}
@@ -115,7 +114,7 @@ export function Phone({ onClose: _onClose }: { onClose: () => void }) {
                         <RecentsTab
                             recents={recents}
                             onAddContact={addContact}
-                            onRequestCall={setCallTarget}
+                            onRequestCall={target => { void placeCall(target); }}
                             onUpdateContact={updateContact}
                             onDeleteContact={deleteContact}
                             onToggleFavorite={toggleFavorite}
@@ -126,7 +125,7 @@ export function Phone({ onClose: _onClose }: { onClose: () => void }) {
                         <FavoritesTab
                             favorites={favorites}
                             onRemoveFavorite={id => toggleFavorite(id, false)}
-                            onRequestCall={setCallTarget}
+                            onRequestCall={target => { void placeCall(target); }}
                             onUpdateContact={updateContact}
                             onDeleteContact={deleteContact}
                             onToggleFavorite={toggleFavorite}
@@ -136,21 +135,6 @@ export function Phone({ onClose: _onClose }: { onClose: () => void }) {
             </div>
 
             <PhoneTabBar tab={tab} onChange={setTab} />
-
-            {callTarget !== null && (
-                <AlertDialog
-                    title={callTarget.video
-                        ? t('phone.videoCallName','Video call {name}',{ name: callTarget.name || formatPhone(callTarget.number) })
-                        : t('phone.callName','Call {name}',{ name: callTarget.name || formatPhone(callTarget.number) })}
-                    message={callTarget.video
-                        ? t('phone.videoCallConfirm','Start a video call with {name}?',{ name: callTarget.name || formatPhone(callTarget.number) })
-                        : t('phone.callConfirm','Call {name}?',{ name: callTarget.name || formatPhone(callTarget.number) })}
-                    cancelLabel={t('phone.cancel','Cancel')}
-                    confirmLabel={callTarget.video ? t('phone.videoCall','Video Call') : t('phone.call','Call')}
-                    onCancel={() => setCallTarget(null)}
-                    onConfirm={() => { void placeCall(callTarget); setCallTarget(null); }}
-                />
-            )}
 
             {dialError !== null && (
                 <AlertDialog

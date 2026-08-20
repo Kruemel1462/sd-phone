@@ -22,7 +22,6 @@ export function TripDriver() {
     const active = useDeckActive();
 
     const [confirmCancel, setConfirmCancel] = useState(false);
-    const [confirmCall, setConfirmCall] = useState(false);
     const [near, setNear] = useState(!isFiveM);
     const [dist, setDist] = useState(-1);
     const enroute = r?.status === 'enroute_pickup';
@@ -152,7 +151,7 @@ export function TripDriver() {
                         {r.riderNumber && (
                             <div className={`mb-3.5 grid ${device.calls ? 'grid-cols-2' : 'grid-cols-1'} gap-3`}>
                                 {device.calls && (
-                                    <button onClick={() => setConfirmCall(true)} className="flex items-center justify-center gap-2 rounded-[14px] bg-black/[0.06] py-3 text-[15px] font-semibold text-black active:opacity-70 dark:bg-white/10 dark:text-white">
+                                    <button onClick={() => { if (r.riderNumber) void dialCall(r.riderNumber, r.riderName ?? t('ryde.rider', 'Rider')); }} className="flex items-center justify-center gap-2 rounded-[14px] bg-black/[0.06] py-3 text-[15px] font-semibold text-black active:opacity-70 dark:bg-white/10 dark:text-white">
                                         <Phone className="h-[20px] w-[20px]" strokeWidth={2.2} /> {t('ryde.call', 'Call')}
                                     </button>
                                 )}
@@ -204,16 +203,6 @@ export function TripDriver() {
                 />
             )}
 
-            {confirmCall && r.riderNumber && (
-                <AlertDialog
-                    title={t('common.callSubject', 'Call {subject}', { subject: r.riderName ?? t('ryde.yourRider', 'your rider') })}
-                    message={t('ryde.callRiderConfirm', 'Call {name}?', { name: r.riderName ?? t('ryde.yourRider', 'your rider') })}
-                    cancelLabel={t('ryde.cancel', 'Cancel')}
-                    confirmLabel={t('ryde.call', 'Call')}
-                    onCancel={() => setConfirmCall(false)}
-                    onConfirm={() => { if (r.riderNumber) void dialCall(r.riderNumber, r.riderName ?? t('ryde.rider', 'Rider')); setConfirmCall(false); }}
-                />
-            )}
         </div>
     );
 }

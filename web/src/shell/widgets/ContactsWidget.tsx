@@ -3,7 +3,7 @@ import { Plus } from 'lucide-react';
 
 import type { WidgetSize, WidgetTheme } from '@/apps/appstore/appsApi';
 import { dialCall } from '@/apps/phone/callsApi';
-import { formatPhone, type Contact } from '@/apps/phone/data';
+import { type Contact } from '@/apps/phone/data';
 import { t } from '@/i18n';
 import { ContactPickerSheet } from '@/shared/ContactPickerSheet';
 import { useContactsStore } from '@/stores/contactsStore';
@@ -107,7 +107,6 @@ export function ContactsWidget({ size, width, height, theme = 'dark', picks, onP
     useEffect(() => { void useContactsStore.getState().load(); }, []);
     const p = palette(theme);
     const [picking, setPicking] = useState(false);
-    const [callTarget, setCallTarget] = useState<Contact | null>(null);
     const [dialError, setDialError] = useState<string | null>(null);
 
     const chosen = (picks ?? [])
@@ -155,7 +154,7 @@ export function ContactsWidget({ size, width, height, theme = 'dark', picks, onP
                     {shown.map(c => (
                         <Tile
                             key={c.id} c={c} px={px} name={name} fg={p.fg}
-                            onCall={() => setCallTarget(c)}
+                            onCall={() => { void placeCall(c); }}
                             onRemove={() => remove(c.id)}
                         />
                     ))}
@@ -166,17 +165,6 @@ export function ContactsWidget({ size, width, height, theme = 'dark', picks, onP
             <div onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
                 {picking && (
                     <ContactPickerSheet onPick={add} onClose={() => setPicking(false)} />
-                )}
-
-                {callTarget !== null && (
-                    <AlertDialog
-                        title={t('phone.callName', 'Call {name}', { name: callTarget.name || formatPhone(callTarget.phone) })}
-                        message={t('phone.callConfirm', 'Call {name}?', { name: callTarget.name || formatPhone(callTarget.phone) })}
-                        cancelLabel={t('phone.cancel', 'Cancel')}
-                        confirmLabel={t('phone.call', 'Call')}
-                        onCancel={() => setCallTarget(null)}
-                        onConfirm={() => { void placeCall(callTarget); setCallTarget(null); }}
-                    />
                 )}
 
                 {dialError !== null && (

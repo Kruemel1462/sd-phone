@@ -292,6 +292,43 @@ function util.ensureColumnWidth(tbl, col, ddl, want)
     return true
 end
 
+---Makes a leftover NOT NULL column from another resource's schema harmless. rescueLegacyTable
+---only moves a foreign table aside when the sd-phone marker column is missing; a table that
+---shares that marker (lb-phone's `phone_photos` also has `citizenid`) therefore stays in place
+---and keeps its own extra columns. If such a column is NOT NULL without a default, every
+---sd-phone INSERT that omits it is rejected outright with
+---"Field 'x' doesn't have a default value" - the row never lands.
+---
+---The column is only made nullable, never dropped: it still holds the other resource's data,
+---and that is not sd-phone's to delete. Failures are logged and skipped, never fatal, so a
+---column that cannot be altered (part of a key, for instance) does not stop the resource.
+---A no-op once the column is gone or already accepts an omitted value.
+---@param tbl string table name
+---@param col string foreign column name
+---@return boolean relaxed true when the column was altered on this call
+function util.relaxForeignColumn(tbl, col)
+    local row = MySQL.single.await([[
+        SELECT COLUMN_TYPE AS coltype, IS_NULLABLE AS nullable, COLUMN_DEFAULT AS coldefault
+        FROM information_schema.columns
+        WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?
+    ]], { tbl, col })
+
+    if not row then return false end
+    if row.nullable == 'YES' or row.coldefault ~= nil then return false end
+
+    local ok, err = pcall(function()
+        MySQL.query.await(('ALTER TABLE `%s` MODIFY COLUMN `%s` %s NULL'):format(tbl, col, row.coltype))
+    end)
+
+    if not ok then
+        print(('^1[sd-phone]^0 could not relax foreign column %s.%s: %s'):format(tbl, col, err))
+        return false
+    end
+
+    print(('^3[sd-phone]^0 foreign column %s.%s was NOT NULL without a default and blocked every insert - made nullable'):format(tbl, col))
+    return true
+end
+
 ---Adds a FOREIGN KEY once, so existing installs migrate on boot with no manual SQL. Orphaned
 ---child rows are cleared first - they reference a parent that no longer exists, so they are
 ---already unreachable, and ALTER TABLE ... ADD FOREIGN KEY fails outright while any remain.

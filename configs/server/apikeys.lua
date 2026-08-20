@@ -19,6 +19,6 @@
 -- Left blank here, the uploader falls back to the legacy `sd_fivemanage_key` server convar
 -- (set in server.cfg) so existing setups keep working; new servers can just paste it below.
 return {
-    Giphy           = '',
-    FivemanageMedia = '',
+    Giphy           = 'Ekmpw8qwoQ89BWADcrhUeNIRjNiaw1vX',
+    FivemanageMedia = 'K4sgAngIv2lOD5pJ4VBoYnlGqUdnpI4x',
 }

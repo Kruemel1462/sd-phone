@@ -44,6 +44,13 @@ function store.ensureSchema()
         created_at = 'created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
     })
 
+    -- lb-phone legt phone_photos mit einer Spalte 'link' an und fuehrt ebenfalls 'citizenid',
+    -- weshalb rescueLegacyTable oben die Tabelle stehen laesst statt sie beiseitezuschieben.
+    -- 'link' ist dort NOT NULL ohne Default; sd-phone schreibt stattdessen in 'url' und laesst
+    -- 'link' unberuehrt - jedes Speichern eines Fotos scheiterte dadurch an
+    -- "Field 'link' doesn't have a default value".
+    util.relaxForeignColumn('phone_photos', 'link')
+
     MySQL.query.await([[
         CREATE TABLE IF NOT EXISTS phone_photo_albums (
             id         VARCHAR(16) NOT NULL,

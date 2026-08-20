@@ -67,7 +67,6 @@ function TripRiderView({ r }: { r: Ride }) {
     const offerCount = r.offers?.length ?? 0;
     const offerIdx = r.offers ? r.offers.findIndex(o => o.tripId === r.tripId) : -1;
 
-    const [confirmCall, setConfirmCall] = useState(false);
     const [confirmCancel, setConfirmCancel] = useState(false);
     const driver = r.driver;
     function messageDriver() {
@@ -123,7 +122,7 @@ function TripRiderView({ r }: { r: Ride }) {
 
                 {r.driver && !inTrip && !offered && (
                     <div className={`mb-3.5 grid ${device.calls ? 'grid-cols-2' : 'grid-cols-1'} gap-3`}>
-                        {device.calls && <Action icon={<Phone className="h-[24px] w-[24px]" />} label={t('ryde.call', 'Call')} onClick={() => setConfirmCall(true)} />}
+                        {device.calls && <Action icon={<Phone className="h-[24px] w-[24px]" />} label={t('ryde.call', 'Call')} onClick={() => { if (driver?.number) void dialCall(driver.number, driver.name); }} />}
                         <Action icon={<MessageSquare className="h-[24px] w-[24px]" />} label={t('ryde.message', 'Message')} onClick={messageDriver} />
                     </div>
                 )}
@@ -161,17 +160,6 @@ function TripRiderView({ r }: { r: Ride }) {
                     </div>
                 )}
             </div>
-
-            {confirmCall && r.driver && (
-                <AlertDialog
-                    title={t('common.callSubject', 'Call {subject}', { subject: r.driver.name })}
-                    message={t('ryde.callConfirm', 'Call {name}?', { name: r.driver.name })}
-                    cancelLabel={t('ryde.cancel', 'Cancel')}
-                    confirmLabel={t('ryde.call', 'Call')}
-                    onCancel={() => setConfirmCall(false)}
-                    onConfirm={() => { if (driver?.number) void dialCall(driver.number, driver.name); setConfirmCall(false); }}
-                />
-            )}
 
             {confirmCancel && (
                 <AlertDialog
