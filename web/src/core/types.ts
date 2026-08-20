@@ -1,6 +1,8 @@
 
 import type { GameClock } from '@/stores/gameClockStore';
 import type { BirdyMessage } from '@/apps/birdy/data';
+import type { CrashBust, CrashSettled, CrashSnapshot, CrashTick } from '@/apps/casino/crash/data';
+import type { HoldemHandEnd, HoldemStatePush } from '@/apps/casino/holdem/data';
 import type { DocFile } from '@/apps/documents/data';
 import type { Bulletin, Call, ChatMsg, Unit } from '@/apps/mdt/data';
 import type { DMsg as PhotogramDM, User as PhotogramUser } from '@/apps/photogram/data';
@@ -99,6 +101,20 @@ export interface CustomWidgetDef {
     name:  string;
     ui:    string;
     sizes: ('sm' | 'md' | 'lg')[];
+    /**
+     * Opt-in: lets the widget's iframe receive real pointer events (taps, buttons) instead of
+     * being purely decorative. Off by default so existing third-party widgets that never
+     * expected clicks keep behaving exactly as before.
+     */
+    interactive?: boolean;
+}
+
+export interface CustomLockscreenWidgetDef {
+    id: string;
+    name: string;
+    ui: string;
+    height: number;
+    interactive?: boolean;
 }
 
 export interface CustomAppDef {
@@ -121,6 +137,7 @@ export interface CustomAppDef {
     /** Device ids this app appears on. Absent means every device. */
     devices?:    string[];
     widgets?:    CustomWidgetDef[];
+    lockscreenWidgets?: CustomLockscreenWidgetDef[];
     resource:    string;
 }
 
@@ -240,12 +257,42 @@ interface MusicSharePush {
     tracks?: MusicSharedTrack[];
 }
 
+/**
+ * Pushed by `exports('sd-phone'):setExternalNowPlaying(appId, track)` — lets a third-party
+ * resource (its own audio engine, not sd-phone's built-in Music) drive the Control Center card,
+ * the dynamic-island mini-player, and the native Now Playing widget, the same way the built-in
+ * Music app does. Only one provider is "active" at a time: the most recent `set` wins, and a
+ * `clear` from a stale appId (one that already lost the slot to a newer provider) is ignored.
+ */
+export interface ExternalNowPlayingTrack {
+    title:    string;
+    artist?:  string;
+    thumb?:   string;
+    playing:  boolean;
+    position: number;
+    duration: number;
+    canNext?: boolean;
+    canPrev?: boolean;
+}
+
+/** One registered custom-app widget currently visible in the lock-screen notification stack. */
+export interface ActiveLockscreenWidget {
+    key: string;
+    appId: string;
+    widgetId: string;
+    payload: Record<string, unknown>;
+}
+
 export type NuiMessage =
     | { action: 'sd-phone:open';    data: OpenPayload }
     | { action: 'sd-phone:apps';    data: { installedApps?: string[]; homeLayout?: string | null } }
     | { action: 'sd-phone:simState'; data: SimStatePush }
     | { action: 'sd-phone:frameColor'; data: { color: string } }
     | { action: 'sd-phone:music:receive'; data: MusicSharePush }
+    | { action: 'sd-phone:nowPlaying:set';   data: { appId: string; track: ExternalNowPlayingTrack } }
+    | { action: 'sd-phone:nowPlaying:clear'; data: { appId: string } }
+    | { action: 'sd-phone:lockscreenWidget:show'; data: ActiveLockscreenWidget }
+    | { action: 'sd-phone:lockscreenWidget:hide'; data: { key: string } }
     | { action: 'sd-phone:pages:feed';       data: ClassifiedFeedPush }
     | { action: 'sd-phone:weazelnews:feed';  data: { type: 'changed' | 'job' } }
     | { action: 'sd-phone:marketplace:feed'; data: ClassifiedFeedPush }
@@ -272,6 +319,12 @@ export type NuiMessage =
     | { action: 'sd-phone:bank:received'; data: { amount: number; from: string } }
     | { action: 'sd-phone:bank:txAdded' }
     | { action: 'sd-phone:stocks:prices'; data: { assets: { symbol: string; price: number; changePct: number }[] } }
+    | { action: 'sd-phone:crash:tick';     data: CrashTick }
+    | { action: 'sd-phone:crash:bust';     data: CrashBust }
+    | { action: 'sd-phone:crash:settled';  data: CrashSettled }
+    | { action: 'sd-phone:crash:snapshot'; data: CrashSnapshot }
+    | { action: 'sd-phone:holdem:state';   data: HoldemStatePush }
+    | { action: 'sd-phone:holdem:hand';    data: HoldemHandEnd }
     | { action: 'sd-phone:mail:received';         data: unknown }
     | { action: 'sd-phone:camera:key';            data: { key: string } }
     | { action: 'sd-phone:camera:lock';           data: { on: boolean } }

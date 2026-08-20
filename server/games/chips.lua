@@ -7,6 +7,10 @@ local money   = require 'bridge.server.money'
 local player  = require 'bridge.server.player'
 ---@type table Banking actions (server.banking.actions): Wallet transaction log (log-only, moves no money).
 local banking = require 'server.banking.actions'
+---@type table Banking bridge (bridge.server.banking): moves the money AND registers the movement
+---so the generic Wallet logger skips it. Going through money.* directly logs the same conversion
+---twice, once from that listener and once from the addExternal call below.
+local bankBridge = require 'bridge.server.banking'
 
 ---@type table Chips module; the table returned at end of file. Shared casino-chip wallet, one
 ---persistent balance per character. Chips convert to/from bank money 1:1 and every conversion is
@@ -24,10 +28,11 @@ local CONVERT_COOLDOWN = 2000
 ---@return string|nil citizenid for a server-trusted src (nil when offline)
 local function cidOf(src) return player.getIdentifier(src) end
 
----Wallet-log category for a chip conversion; unknown or missing game ids collapse to 'blackjack'.
+---Wallet-log category for a chip conversion. Legacy blackjack rows keep their own category so old
+---Wallet history still renders; every other conversion (the Casino cashier) logs as 'casino'.
 ---@param game string|nil originating game id
 ---@return string category
-local function categoryOf(game) return game == 'blackjack' and game or 'blackjack' end
+local function categoryOf(game) return game == 'blackjack' and 'blackjack' or 'casino' end
 
 ---Creates the chip-wallet table if it doesn't exist. Runs once at boot.
 function chips.ensureSchema()
@@ -88,6 +93,31 @@ function chips.remove(cid, n)
     return chips.get(cid)
 end
 
+---Credits many characters at once in a single statement, and reads nothing back. Written for
+---resource shutdown, where escrowed casino stacks have to reach the database before the state
+---holding them is destroyed: one query has a chance of landing, a loop of add + get does not.
+---@param rows table<string, integer> citizenid -> chips to credit
+---@return integer credited number of characters written
+function chips.creditMany(rows)
+    local values, params, n = {}, {}, 0
+    for cid, amount in pairs(rows or {}) do
+        local chunk = toAmount(amount)
+        if type(cid) == 'string' and cid ~= '' and chunk > 0 then
+            n = n + 1
+            values[n] = '(?, ?)'
+            params[#params + 1] = cid
+            params[#params + 1] = math.min(CHIP_CEILING, chunk)
+        end
+    end
+    if n == 0 then return 0 end
+    params[#params + 1] = CHIP_CEILING
+    MySQL.update.await(([[
+        INSERT INTO phone_casino_chips (citizenid, chips) VALUES %s
+        ON DUPLICATE KEY UPDATE chips = LEAST(chips + VALUES(chips), ?)
+    ]]):format(table.concat(values, ', ')), params)
+    return n
+end
+
 ---Buys chips with bank money (1:1), debit-before-credit. Logs a -amount Wallet transaction.
 ---@param src integer player server id
 ---@param amount any client-supplied amount (clamped to [1, TX_MAX])
@@ -98,8 +128,9 @@ function chips.buy(src, amount, game)
     local cid = cidOf(src); if not cid then return nil, 'Player not found' end
     amount = clampTx(amount)
     if amount <= 0 then return nil, 'Enter a valid amount' end
-    if (money.get(src, 'bank') or 0) < amount then return nil, 'Not enough money in the bank' end
-    money.remove(src, 'bank', amount, 'casino-chips')
+    if not bankBridge.removeMoney(src, amount, 'casino-chips') then
+        return nil, 'Not enough money in the bank'
+    end
     local bal = chips.add(cid, amount)
     banking.addExternal(cid, { label = 'Chip purchase', amount = -amount, category = categoryOf(game) })
     return { chips = bal, bank = money.get(src, 'bank') or 0 }
@@ -117,7 +148,10 @@ function chips.sell(src, amount, game)
     if amount <= 0 then return nil, 'Enter a valid amount' end
     local bal = chips.remove(cid, amount)
     if not bal then return nil, 'Not enough chips' end
-    money.add(src, 'bank', amount, 'casino-chips')
+    if not bankBridge.addMoney(src, amount, 'casino-chips') then
+        chips.add(cid, amount)
+        return nil, 'Could not reach your bank account'
+    end
     banking.addExternal(cid, { label = 'Chip cashout', amount = amount, category = categoryOf(game) })
     return { chips = bal, bank = money.get(src, 'bank') or 0 }
 end

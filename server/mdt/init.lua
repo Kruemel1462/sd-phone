@@ -11,6 +11,11 @@ local store     = require 'server.mdt.store'
 local actions   = require 'server.mdt.actions'
 ---@type table Persons and vehicles (server.mdt.records).
 local records   = require 'server.mdt.records'
+---@type table Firearms registry (server.mdt.weapons): serials, owners and their registry state.
+local weapons   = require 'server.mdt.weapons'
+---@type table Bodycams and dashcams (server.mdt.cameras): the demand-gated live relay behind the
+---Cameras section.
+local cameras   = require 'server.mdt.cameras'
 ---@type table Reports and cases (server.mdt.paperwork).
 local paperwork = require 'server.mdt.paperwork'
 ---@type table Warrants (server.mdt.warrants).
@@ -90,6 +95,15 @@ local ROUTES = {
     { 'vehicles:search',     records,   'vehiclesSearch' },
     { 'vehicles:get',        records,   'vehiclesGet' },
     { 'vehicles:update',     records,   'vehiclesUpdate' },
+
+    { 'weapons:search',      weapons,   'search' },
+    { 'weapons:get',         weapons,   'get' },
+    { 'weapons:create',      weapons,   'create' },
+    { 'weapons:update',      weapons,   'update' },
+
+    { 'cameras:list',        cameras,   'list' },
+    { 'cameras:watch',       cameras,   'watch' },
+    { 'cameras:unwatch',     cameras,   'unwatch' },
 
     { 'reports:list',        paperwork, 'reportsList' },
     { 'reports:get',         paperwork, 'reportsGet' },

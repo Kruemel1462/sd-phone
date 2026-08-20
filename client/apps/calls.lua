@@ -92,8 +92,10 @@ RegisterNetEvent('sd-phone:client:call:connected', function(data)
 end)
 
 RegisterNetEvent('sd-phone:client:call:ended', function(data)
-    if micMuted then setMicMuted(false) end
+    -- Push first: the mic reset reaches into the voice script, and anything it raises must not
+    -- take the end of the call down with it.
     pushCall('sd-phone:call:ended', data)
+    if micMuted then pcall(setMicMuted, false) end
 end)
 
 ---Conference roster: who else is on this call, and who is still being rung into it. Pushed on
