@@ -3,9 +3,11 @@ import { isFiveM } from '@/core/nui';
 import type {
     AdminAuditEntry, AdminBirdyPost, AdminCall, AdminContentItem,
     AdminMessage, AdminMute, AdminNumberRow, AdminOverview, AdminPlayerHit, AdminSimLookup, AdminStats,
+    MigrationScan, MigrationSnapshot,
 } from './types';
 import {
-    DEV_AUDIT, DEV_MUTES, DEV_PLAYERS, DEV_STATS, devBirdyPosts, devCalls, devContent,
+    DEV_AUDIT, DEV_MIGRATION_SCAN, DEV_MIGRATION_SNAPSHOT, DEV_MUTES, DEV_PLAYERS, DEV_STATS,
+    devBirdyPosts, devCalls, devContent,
     devMessages, devNumbers, devOverview, devSearch, devSimLookup,
 } from './devData';
 
@@ -126,3 +128,18 @@ export const adminAudit = (cursor?: number | null) =>
     isFiveM
         ? call<{ entries: AdminAuditEntry[]; nextCursor?: number | null }>('sd-phone:admin:audit', { cursor })
         : seed({ entries: DEV_AUDIT, nextCursor: null });
+
+export const adminMigrateScan = () =>
+    isFiveM ? call<MigrationScan>('sd-phone:admin:migrateScan') : seed(DEV_MIGRATION_SCAN);
+
+export const adminMigrateState = () =>
+    isFiveM ? call<MigrationSnapshot>('sd-phone:admin:migrateState') : seed(DEV_MIGRATION_SNAPSHOT);
+
+export const adminMigrateStart = (domains: string[], dryRun: boolean) =>
+    isFiveM ? call<void>('sd-phone:admin:migrateStart', { domains, dryRun }) : ok();
+
+export const adminMigrateStop = () =>
+    isFiveM ? call<void>('sd-phone:admin:migrateStop') : ok();
+
+export const adminMigrateWatch = (on: boolean) =>
+    isFiveM ? call<void>('sd-phone:admin:migrateWatch', { on }) : ok();

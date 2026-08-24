@@ -81,3 +81,15 @@ proxyCallback('sd-phone:admin:stats',                'sd-phone:server:admin:stat
 proxyCallback('sd-phone:admin:simLookup',            'sd-phone:server:admin:simLookup')
 proxyCallback('sd-phone:admin:giveSim',              'sd-phone:server:admin:giveSim')
 proxyCallback('sd-phone:admin:numbers',              'sd-phone:server:admin:numbers')
+proxyCallback('sd-phone:admin:migrateScan',          'sd-phone:server:admin:migrateScan')
+proxyCallback('sd-phone:admin:migrateState',         'sd-phone:server:admin:migrateState')
+proxyCallback('sd-phone:admin:migrateStart',         'sd-phone:server:admin:migrateStart')
+proxyCallback('sd-phone:admin:migrateStop',          'sd-phone:server:admin:migrateStop')
+proxyCallback('sd-phone:admin:migrateWatch',         'sd-phone:server:admin:migrateWatch')
+
+---Server to React: one migration progress push. The server only sends these to admins who asked
+---to watch, so this relays whatever arrives without a gate of its own.
+---@param payload table { state?: table, lines?: table[], reset?: boolean }
+RegisterNetEvent('sd-phone:client:migrate:push', function(payload)
+    SendNUIMessage({ action = 'sd-phone:admin:migrate', data = payload })
+end)

@@ -28,15 +28,18 @@ function M.run(ctx)
         return { written = 0, deferred = 0, skipped = 0 }
     end
 
+    -- Squawk's porter runs just before this one, so its accounts normally exist by now. When they
+    -- do not - a run that picked `sessions` on its own, or a database with no lb Twitter data -
+    -- those logins are held rather than written, and the domain stays unmarked so they are picked
+    -- up once Squawk has been imported.
+    local birdyReady = store.appAccountExists('birdy')
+
     for _, l in ipairs(store.lbLoggedIn()) do
         local app = appFor(l.app)
         local cid = ctx.numberToCid[digits(l.phone_number)]
         if not app or not cid then
             skipped = skipped + 1
-        elseif app == 'birdy' then
-            -- Squawk accepts multiple accounts now, but nothing has ported lb's Twitter profiles
-            -- across yet, so there is no account to attach these logins to. The Squawk porter
-            -- picks them up.
+        elseif app == 'birdy' and not birdyReady then
             deferred = deferred + 1
         else
             rows[#rows + 1] = { app, cid, l.username }

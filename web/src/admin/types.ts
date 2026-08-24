@@ -189,7 +189,7 @@ export interface MuteScopeDef {
 export const MUTE_SCOPES: MuteScopeDef[] = [
     { id: 'birdy',     label: 'Squawk',    social: true },
     { id: 'photogram', label: 'Photogram', social: true },
-    { id: 'vibez',     label: 'Vibez',     social: true },
+    { id: 'vibez',     label: 'Clout',     social: true },
     { id: 'cherry',    label: 'Cherry',    social: true },
     { id: 'darkchat',  label: 'Dark Chat', social: true },
     { id: 'sms',       label: 'Texts',     social: false },
@@ -214,4 +214,97 @@ export function fmtPhone(number?: string | null): string {
     const d = (number ?? '').replace(/\D/g, '');
     if (!d) return '—';
     return formatPhone(d);
+}
+
+export type MigrationDomainStatus = 'pending' | 'done' | 'disabled';
+
+export interface MigrationDomain {
+    key:       string;
+    label:     string;
+    title?:    string;
+    blurb?:    string;
+    rows:      number;
+    status:    MigrationDomainStatus;
+    requires?: string;
+    estimate:  string;
+    locked?:   boolean;
+    summary?:  string;
+    stats?:    Record<string, number>;
+}
+
+export interface MigrationIdentity {
+    total:      number;
+    resolved:   number;
+    unresolved: number;
+    ambiguous:  number;
+}
+
+export interface MigrationScan {
+    lbFound:   boolean;
+    busy:      boolean;
+    domains:   MigrationDomain[];
+    totalRows: number;
+    estimate?: string;
+    identity?: MigrationIdentity;
+}
+
+export type MigrationPhase = 'idle' | 'running' | 'done' | 'failed' | 'cancelled';
+
+export type MigrationRunStatus = 'queued' | 'running' | 'done' | 'failed';
+
+export interface MigrationRunDomain {
+    status:   MigrationRunStatus;
+    rows:     number;
+    summary?: string;
+}
+
+export interface MigrationState {
+    phase:         MigrationPhase;
+    dryRun?:       boolean;
+    by?:           string;
+    startedAt?:    number;
+    finishedAt?:   number;
+    totalRows?:    number;
+    doneRows?:     number;
+    currentDomain?: string;
+    currentRows?:  number;
+    currentTotal?: number;
+    currentStage?: 'reading' | 'building' | 'writing';
+    writeDone?:    number;
+    writeTotal?:   number;
+    etaSeconds?:   number;
+    okCount?:      number;
+    failedList?:   string[];
+    identity?:     MigrationIdentity;
+    domains?:      Record<string, MigrationRunDomain>;
+}
+
+export interface MigrationLine {
+    id:    number;
+    at:    number;
+    level: 'info' | 'warn' | 'error' | 'ok';
+    text:  string;
+}
+
+export interface MigrationSample {
+    t:    number;
+    rows: number;
+}
+
+export interface MigrationMark {
+    t:   number;
+    key: string;
+}
+
+export interface MigrationSnapshot {
+    state:   MigrationState;
+    lines:   MigrationLine[];
+    series?: MigrationSample[];
+    marks?:  MigrationMark[];
+}
+
+export interface MigrationPush {
+    reset?: boolean;
+    state?: MigrationState;
+    lines?: MigrationLine[];
 }

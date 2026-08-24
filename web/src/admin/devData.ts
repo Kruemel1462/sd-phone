@@ -1,6 +1,7 @@
 import type {
     AdminAuditEntry, AdminBirdyPost, AdminCall, AdminContentItem,
     AdminMessage, AdminMute, AdminNumberRow, AdminOverview, AdminPlayerHit, AdminSimLookup, AdminStats,
+    MigrationDomain, MigrationScan, MigrationSnapshot,
 } from './types';
 import bg3 from '@/assets/photos/background3.webp';
 import bg4 from '@/assets/photos/background4.webp';
@@ -84,7 +85,7 @@ const APPS = [
 ];
 
 const DOWNLOADABLE = [
-    { id: 'vibez', label: 'Vibez' }, { id: 'cherry', label: 'Cherry' },
+    { id: 'vibez', label: 'Clout' }, { id: 'cherry', label: 'Cherry' },
     { id: 'darkchat', label: 'Dark Chat' }, { id: 'marketplace', label: 'Marketplace' },
     { id: 'pages', label: 'Pages' }, { id: 'stocks', label: 'Stocks' },
     { id: 'wordle', label: 'Penta' }, { id: 'chess', label: 'Chess' },
@@ -321,3 +322,49 @@ export const DEV_AUDIT: AdminAuditEntry[] = AUDIT_ACTIONS.map(([action, detail],
         createdAt: ago(i * 3 * HOUR + 900),
     };
 });
+
+const MIGRATION_DOMAINS: [string, number, MigrationDomain['status'], string | undefined, string][] = [
+    ['numbers',    4821,   'done',     undefined,   'Phone numbers and lock passcodes. Everything else keys off this.'],
+    ['contacts',   38104,  'done',     undefined,   'Saved contacts and their avatars.'],
+    ['blocked',    1290,   'done',     undefined,   'Blocked number list.'],
+    ['calls',      92640,  'done',     undefined,   'Call history.'],
+    ['messages',   1284502,'pending',  undefined,   'SMS threads including group chats.'],
+    ['reactions',  8841,   'pending',  'messages',  'Reactions on migrated messages.'],
+    ['photos',     20418,  'pending',  undefined,   'Camera roll photos and albums.'],
+    ['notes',      3907,   'pending',  undefined,   'Notes app entries.'],
+    ['settings',   4821,   'pending',  undefined,   'Wallpaper, theme, clock format, ringtones, volumes, home layout.'],
+    ['photogram',  418203, 'pending',  undefined,   'Photogram accounts, posts, comments, likes, follows, stories and DMs.'],
+    ['birdy',      511066, 'pending',  undefined,   'Squawk accounts, posts and replies, likes, reposts, follows and DMs.'],
+    ['mail',       64118,  'pending',  undefined,   'Mailboxes and their received messages.'],
+    ['wallet',     150922, 'disabled', undefined,   'Wallet transaction history.'],
+    ['voicememos', 2044,   'pending',  undefined,   'Voice memo recordings.'],
+    ['sessions',   6210,   'pending',  'photogram', 'Keeps migrated players signed into their accounts.'],
+];
+
+function devEstimate(rows: number): string {
+    const secs = rows / 8000;
+    return secs < 90 ? `~${Math.max(1, Math.round(secs))}s` : `~${Math.max(1, Math.round(secs / 60))}m`;
+}
+
+export const DEV_MIGRATION_SCAN: MigrationScan = {
+    lbFound:   true,
+    busy:      false,
+    domains:   MIGRATION_DOMAINS.map(([key, rows, status, requires, blurb]) => ({
+        key,
+        label:    key,
+        title:    ({"numbers":"Phone numbers","contacts":"Contacts","blocked":"Blocked numbers","calls":"Call history","messages":"Messages","reactions":"Message reactions","photos":"Photos and albums","notes":"Notes","settings":"Phone settings","photogram":"Photogram (InstaPic)","birdy":"Squawk (Birdy)","mail":"Mail","wallet":"Bank (Wallet)","voicememos":"Voice Memos","sessions":"Signed-in accounts"})[key] ?? key,
+        blurb,
+        rows,
+        status,
+        requires,
+        estimate: devEstimate(rows),
+        locked:   status === 'done',
+        summary:  status === 'done' ? `${Math.round(rows * 0.86).toLocaleString('en-US')} brought across` : undefined,
+        stats:    status === 'done' ? { migrated: Math.round(rows * 0.86), skipped: Math.round(rows * 0.14) } : undefined,
+    })),
+    totalRows: MIGRATION_DOMAINS.filter(d => d[2] === 'pending').reduce((n, d) => n + d[1], 0),
+    estimate:  devEstimate(MIGRATION_DOMAINS.filter(d => d[2] === 'pending').reduce((n, d) => n + d[1], 0)),
+    identity:  { total: 4821, resolved: 4402, unresolved: 361, ambiguous: 58 },
+};
+
+export const DEV_MIGRATION_SNAPSHOT: MigrationSnapshot = { state: { phase: 'idle' }, lines: [] };

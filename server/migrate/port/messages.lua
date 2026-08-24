@@ -153,7 +153,9 @@ function M.run(ctx)
     local groupRows, memberRows, msgRows = {}, {}, {}
     local migrated, skipped, groupCount = 0, 0, 0
 
-    for _, ch in ipairs(store.lbChannels()) do
+    local channels = store.lbChannels()
+    for chIndex, ch in ipairs(channels) do
+        if ctx.report then ctx.report(chIndex, #channels) end
         -- Resolve every channel member to { number, cid, isOwner }.
         local members = {}
         for _, m in ipairs(membersByChannel[ch.id] or {}) do

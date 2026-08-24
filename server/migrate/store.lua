@@ -150,6 +150,23 @@ function store.completedDomains()
     return set
 end
 
+---The counters each finished domain recorded when it ran, keyed by domain. Lets the panel report
+---what a completed import actually did rather than only that it happened.
+---@return table<string, table>
+function store.completedDomainStats()
+    local rows = MySQL.query.await(
+        'SELECT name, stats FROM phone_migrations WHERE name LIKE ?', { DOMAIN_MARKER .. '%' }) or {}
+    local out = {}
+    for _, r in ipairs(rows) do
+        local key = tostring(r.name):sub(#DOMAIN_MARKER + 1)
+        if key ~= '' then
+            local ok, decoded = pcall(json.decode, r.stats or '{}')
+            out[key] = (ok and type(decoded) == 'table') and decoded or {}
+        end
+    end
+    return out
+end
+
 ---Marks one domain as imported, stamping its counts. Idempotent (INSERT IGNORE).
 ---@param key string domain key
 ---@param stats table counts returned by the porter
@@ -305,6 +322,17 @@ function store.lbNotes()
     ]]):format(lbt('notes'))) or {}
 end
 
+---@type fun(written: integer, total: integer)|nil Reporter for the domain currently running.
+---
+---A porter spends its time in one big read and then a long series of chunked writes, not in the Lua
+---loop between them, so progress counted in the loop jumps and then sits still. Ticking here - once
+---per written chunk - is the only place that tracks the work as it actually happens.
+local progressHook = nil
+
+---Sets the per-chunk write reporter, or clears it with nil. Scoped to one porter by the runner.
+---@param fn fun(written: integer)|nil
+function store.onProgress(fn) progressHook = fn end
+
 ---Runs a chunked multi-row INSERT IGNORE. `prefixSql` ends at the word VALUES; one placeholder
 ---group is appended per row, nil columns emit a literal NULL, and an empty batch is a no-op.
 ---`suffixSql` is appended after the groups, for an ON DUPLICATE KEY UPDATE tail.
@@ -336,6 +364,7 @@ local function insertMulti(prefixSql, cols, rows, suffixSql)
         local sql = prefixSql .. ' ' .. table.concat(groups, ',')
         if suffixSql then sql = sql .. ' ' .. suffixSql end
         MySQL.query.await(sql, params)
+        if progressHook then progressHook(last - i + 1, total) end
     end
 end
 
@@ -690,6 +719,50 @@ function store.insertPgNotifications(rows)
     insertMulti('INSERT IGNORE INTO phone_photogram_notifications (id, recipient, kind, actor, post_id, seen, created_at) VALUES', 7, rows)
 end
 
+---Fills in an lb-phone password hash on accounts that have none.
+---
+---An account with an empty hash cannot be signed into at all, which for mail means nobody can ever
+---reach it: lb never recorded who owns a mailbox, so there is no one to hand a fresh password to.
+---Adopting lb's own bcrypt hash lets the owner in with the password they already use. Only ever
+---fills a blank - an account whose owner has since set a password keeps it.
+---@param rows any[][] { app, username, password_hash }
+---@return integer adopted
+function store.adoptLegacyHashes(rows)
+    if type(rows) ~= 'table' or #rows == 0 then return 0 end
+
+    local tmp = '_sdphone_migrate_hashes'
+    MySQL.query.await(('DROP TABLE IF EXISTS `%s`'):format(tmp))
+    MySQL.query.await(([[
+        CREATE TABLE `%s` (
+            app VARCHAR(24) NOT NULL, username VARCHAR(64) NOT NULL, hash VARCHAR(255) NOT NULL,
+            PRIMARY KEY (app, username)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ]]):format(tmp))
+
+    for i = 1, #rows, 300 do
+        local last = math.min(i + 299, #rows)
+        local groups, params, k = {}, {}, 0
+        for j = i, last do
+            groups[#groups + 1] = '(?,?,?)'
+            k = k + 1; params[k] = rows[j][1]
+            k = k + 1; params[k] = rows[j][2]
+            k = k + 1; params[k] = rows[j][3]
+        end
+        MySQL.query.await(
+            ('INSERT IGNORE INTO `%s` (app, username, hash) VALUES %s'):format(tmp, table.concat(groups, ',')),
+            params)
+    end
+
+    local adopted = tonumber(MySQL.update.await(([[
+        UPDATE phone_app_accounts a JOIN `%s` t ON t.app = a.app AND t.username = a.username
+        SET a.password_hash = t.hash
+        WHERE a.password_hash = ''
+    ]]):format(tmp))) or 0
+
+    MySQL.query.await(('DROP TABLE IF EXISTS `%s`'):format(tmp))
+    return adopted
+end
+
 ---Accounts-engine rows for migrated app accounts.
 ---@param rows any[][] { app, username, display_name, password_hash }
 function store.insertPgAccounts(rows)
@@ -732,24 +805,29 @@ function store.grantMigratedLogins(entries)
     MySQL.query.await(([[
         CREATE TABLE `%s` (
             app VARCHAR(24) NOT NULL, username VARCHAR(64) NOT NULL, citizenid VARCHAR(64) NOT NULL,
-            plain VARCHAR(64) NOT NULL, hash VARCHAR(64) NOT NULL, email VARCHAR(120) NULL,
+            plain VARCHAR(64) NOT NULL, hash VARCHAR(255) NOT NULL, email VARCHAR(120) NULL,
             PRIMARY KEY (app, username, citizenid)
-        ) ENGINE=MEMORY DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ]]):format(tmp))
 
     for i = 1, #entries, 300 do
         local last = math.min(i + 299, #entries)
-        local groups, params = {}, {}
+        local groups, params, k = {}, {}, 0
         for j = i, last do
             local e = entries[j]
             local plain = newPassword()
-            groups[#groups + 1] = '(?,?,?,?,?,?)'
-            params[#params + 1] = e.app
-            params[#params + 1] = e.username
-            params[#params + 1] = e.cid
-            params[#params + 1] = plain
-            params[#params + 1] = accounts.hashPassword(plain)
-            params[#params + 1] = e.email
+            -- `email` is the only optional field, and a nil one must become a literal NULL rather
+            -- than a bound parameter: `params[#params + 1] = nil` appends nothing and leaves the
+            -- length where it was, so every later value slid one place and the row was written with
+            -- the next account's fields. Exactly one row in six realigned, which is the share of
+            -- accounts that ended up with a working password.
+            groups[#groups + 1] = ('(?,?,?,?,?,%s)'):format(e.email ~= nil and '?' or 'NULL')
+            k = k + 1; params[k] = e.app
+            k = k + 1; params[k] = e.username
+            k = k + 1; params[k] = e.cid
+            k = k + 1; params[k] = plain
+            k = k + 1; params[k] = accounts.hashPassword(plain)
+            if e.email ~= nil then k = k + 1; params[k] = e.email end
         end
         MySQL.query.await(([[
             INSERT IGNORE INTO `%s` (app, username, citizenid, plain, hash, email) VALUES %s
@@ -791,7 +869,7 @@ function store.insertPgSessions(rows)
         CREATE TABLE `%s` (
             app VARCHAR(24) NOT NULL, citizenid VARCHAR(64) NOT NULL, username VARCHAR(64) NOT NULL,
             PRIMARY KEY (app, citizenid, username)
-        ) ENGINE=MEMORY DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ]]):format(tmp))
 
     for i = 1, #rows, 300 do
@@ -935,6 +1013,134 @@ end
 function store.encodeJson(tbl)
     if not tbl or next(tbl) == nil then return nil end
     return json.encode(tbl)
+end
+
+
+---@return table[] lb-phone Twitter accounts whose phone is owned by a resolved character.
+function store.lbTwAccounts()
+    return MySQL.query.await(([[
+        SELECT a.username, a.display_name, a.password, a.bio, a.profile_image, a.profile_header,
+               a.verified, a.private, a.phone_number, UNIX_TIMESTAMP(a.date_joined) AS ts
+        FROM %s a
+        JOIN `%s` o ON o.number = a.phone_number
+    ]]):format(lbt('twitter_accounts'), OWNED)) or {}
+end
+
+---@return table[]
+function store.lbTwTweets()
+    return MySQL.query.await(([[
+        SELECT id, username, content, attachments, reply_to, UNIX_TIMESTAMP(timestamp) AS ts
+        FROM %s
+    ]]):format(lbt('twitter_tweets'))) or {}
+end
+
+---@return table[]
+function store.lbTwLikes()
+    return MySQL.query.await(([[
+        SELECT tweet_id, username, UNIX_TIMESTAMP(timestamp) AS ts FROM %s
+    ]]):format(lbt('twitter_likes'))) or {}
+end
+
+---@return table[]
+function store.lbTwRetweets()
+    return MySQL.query.await(([[
+        SELECT tweet_id, username, UNIX_TIMESTAMP(timestamp) AS ts FROM %s
+    ]]):format(lbt('twitter_retweets'))) or {}
+end
+
+---@return table[]
+function store.lbTwFollows()
+    return MySQL.query.await(('SELECT followed, follower FROM %s'):format(lbt('twitter_follows'))) or {}
+end
+
+---@return table[]
+function store.lbTwMessages()
+    return MySQL.query.await(([[
+        SELECT id, sender, recipient, content, attachments, UNIX_TIMESTAMP(timestamp) AS ts
+        FROM %s
+    ]]):format(lbt('twitter_messages'))) or {}
+end
+
+---@return table[]
+function store.lbTwNotifications()
+    return MySQL.query.await(([[
+        SELECT id, username, `from`, type, tweet_id, UNIX_TIMESTAMP(timestamp) AS ts
+        FROM %s
+    ]]):format(lbt('twitter_notifications'))) or {}
+end
+
+---Usernames of an app's accounts that have no entry in the Passwords vault.
+---
+---An account only reaches this state when an earlier import created it but failed to hand its
+---owner a password, which leaves them locked out the moment they sign out. A re-run uses this to
+---grant one to exactly those accounts: anyone who already has a password keeps it rather than
+---having it silently rotated underneath them.
+---@param app string
+---@return table<string, boolean>
+function store.accountsMissingLogin(app)
+    local rows = MySQL.query.await([[
+        SELECT a.username FROM phone_app_accounts a
+        LEFT JOIN phone_passwords p ON p.app = a.app AND p.username = a.username
+        WHERE a.app = ? AND p.id IS NULL
+    ]], { app }) or {}
+    local set = {}
+    for _, r in ipairs(rows) do set[tostring(r.username)] = true end
+    return set
+end
+
+---Whether the accounts engine already holds any account for an app. The sessions porter uses this
+---to tell "nothing has ported this app yet" apart from "this player simply has no account".
+---@param app string
+---@return boolean
+function store.appAccountExists(app)
+    local n = MySQL.scalar.await('SELECT 1 FROM phone_app_accounts WHERE app = ? LIMIT 1', { app })
+    return n ~= nil
+end
+
+---Handles already taken in Squawk, so a migrated account never collides with a live one.
+---@return table<string, boolean>
+function store.existingBirdyHandles()
+    local rows = MySQL.query.await('SELECT handle FROM phone_birdy_profiles') or {}
+    local set = {}
+    for _, r in ipairs(rows) do set[tostring(r.handle)] = true end
+    return set
+end
+
+---@param rows any[][] { handle, citizenid, display_name, password, bio, verified, verified_type, logged_in, join_label, protected, avatar, banner, created_at }
+function store.insertBirdyProfiles(rows)
+    insertMulti(
+        'INSERT IGNORE INTO phone_birdy_profiles (handle, citizenid, display_name, password, bio, verified, verified_type, logged_in, join_label, protected, avatar, banner, created_at) VALUES',
+        13, rows)
+end
+
+---@param rows any[][] { id, author, body, parent_id, images, views, created_at }
+function store.insertBirdyPosts(rows)
+    insertMulti('INSERT IGNORE INTO phone_birdy_posts (id, author, body, parent_id, images, views, created_at) VALUES', 7, rows)
+end
+
+---@param rows any[][] { post_id, handle, created_at }
+function store.insertBirdyLikes(rows)
+    insertMulti('INSERT IGNORE INTO phone_birdy_likes (post_id, handle, created_at) VALUES', 3, rows)
+end
+
+---@param rows any[][] { post_id, handle, created_at }
+function store.insertBirdyReposts(rows)
+    insertMulti('INSERT IGNORE INTO phone_birdy_reposts (post_id, handle, created_at) VALUES', 3, rows)
+end
+
+---@param rows any[][] { follower, target, created_at }
+function store.insertBirdyFollows(rows)
+    insertMulti('INSERT IGNORE INTO phone_birdy_follows (follower, target, created_at) VALUES', 3, rows)
+end
+
+---@param rows any[][] { id, from_handle, to_handle, body, kind, meta, read_flag, created_at }
+function store.insertBirdyDms(rows)
+    insertMulti('INSERT IGNORE INTO phone_birdy_dms (id, from_handle, to_handle, body, kind, meta, read_flag, created_at) VALUES', 8, rows)
+end
+
+---@param rows any[][] { id, recipient, kind, actor, post_id, seen, created_at }
+function store.insertBirdyNotifications(rows)
+    insertMulti('INSERT IGNORE INTO phone_birdy_notifications (id, recipient, kind, actor, post_id, seen, created_at) VALUES', 7, rows)
 end
 
 return store

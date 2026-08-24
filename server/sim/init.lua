@@ -480,7 +480,7 @@ lib.callback.register('sd-phone:server:sim:backup:set', function(source, payload
         -- With no profiles left there is nothing the password protects: the entered password
         -- becomes the new one (also the recovery path for a forgotten password).
         if existing and simStore.profileCount(realCid) > 0 then
-            if accounts.hashPassword(password) ~= existing then
+            if not accounts.verifyPassword(password, existing) then
                 return util.fail('Wrong backup password. It\'s saved in the Passwords app of your backed-up phone.')
             end
         else
@@ -647,7 +647,7 @@ lib.callback.register('sd-phone:server:sim:backup:restore', function(source, pay
     if stored then
         local given = type(payload.password) == 'string' and payload.password or ''
         local accounts = require 'server.accounts.store'
-        if accounts.hashPassword(given) ~= stored then
+        if not accounts.verifyPassword(given, stored) then
             return util.fail('Wrong backup password.')
         end
     end

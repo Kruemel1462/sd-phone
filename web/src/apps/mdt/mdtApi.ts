@@ -894,20 +894,41 @@ export async function mdtCameras(): Promise<CameraGrid> {
     };
 }
 
-export async function mdtCameraWatch(cameraId: string, quality: CameraQuality, reprime = false): Promise<CameraStream | string> {
+/**
+ * A camera attach, plus what the server decided about a peer connection for it. Kept here rather
+ * than on CameraStream because it describes this terminal's relationship to the camera, not the
+ * camera itself: the same broadcast is peer-served to one terminal and event-served to the next.
+ */
+export interface CameraAttach extends CameraStream {
+    peer:     boolean;
+    peerHost: number | null;
+}
+
+export async function mdtCameraWatch(
+    cameraId: string,
+    quality: CameraQuality,
+    reprime = false,
+    relay = false,
+    relayFailed = false,
+    peer = false,
+): Promise<CameraAttach | string> {
     if (!isFiveM) {
         const tile = DEV_CAMERAS.find(c => c.id === cameraId);
         if (!tile) return 'That unit is no longer on the air';
-        return { cameraId, gen: 1, mime: null, status: tile.status, viewers: tile.viewers };
+        return { cameraId, gen: 1, mime: null, status: tile.status, viewers: tile.viewers, relay: null, peer: false, peerHost: null };
     }
-    const res = await apiCall<CameraStream>('sd-phone:mdt:cameras:watch', { cameraId, quality, reprime });
+    const res = await apiCall<CameraAttach>('sd-phone:mdt:cameras:watch', { cameraId, quality, reprime, relay, relayFailed, peer });
     if (!res.success || !res.data) return res.message ?? '';
+    const grant = res.data.relay ?? null;
     return {
         cameraId: res.data.cameraId ?? cameraId,
         gen:      res.data.gen ?? 0,
         mime:     res.data.mime ?? null,
         status:   res.data.status ?? 'ready',
         viewers:  res.data.viewers ?? 0,
+        relay:    grant && typeof grant.token === 'string' && typeof grant.url === 'string' ? grant : null,
+        peer:     res.data.peer === true,
+        peerHost: typeof res.data.peerHost === 'number' ? res.data.peerHost : null,
     };
 }
 
@@ -1904,4 +1925,34 @@ const DEV_SOPS: Sop[] = [
 export async function mdtSops(): Promise<Sop[]> {
     if (!isFiveM) return [...DEV_SOPS];
     return (await apiData<{ rows: Sop[] }>('sd-phone:mdt:sops:list'))?.rows ?? [];
+}
+
+export interface CctvCamera {
+    id:       string;
+    label:    string;
+    category: string;
+}
+
+export async function cctvList(): Promise<{ enabled: boolean; cameras: CctvCamera[] }> {
+    if (!isFiveM) {
+        return {
+            enabled: true,
+            cameras: [
+                { id: 'dev_bank', label: 'Fleeca, Legion Square', category: 'Bank' },
+                { id: 'dev_store', label: '24/7 1', category: '24/7' },
+            ],
+        };
+    }
+    const res = await apiCall<{ enabled?: boolean; cameras?: CctvCamera[] }>('sd-phone:cctv:list', {});
+    return { enabled: res.data?.enabled !== false, cameras: res.data?.cameras ?? [] };
+}
+
+export async function cctvWatch(cameraId: string): Promise<boolean> {
+    if (!isFiveM) return true;
+    return (await apiCall('sd-phone:cctv:watch', { cameraId })).success === true;
+}
+
+export async function cctvClose(): Promise<void> {
+    if (!isFiveM) return;
+    await apiCall('sd-phone:cctv:close', {});
 }

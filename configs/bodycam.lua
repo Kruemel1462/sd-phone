@@ -7,9 +7,9 @@
 -- the officer's client is told to start only once a viewer is actually attached.
 --
 -- Because the capture is the officer's own rendered frame, a bodycam shows what the
--- officer sees. FirstPerson below puts them in first person while they are being watched,
--- which is what makes the feed read as a body-worn camera rather than a chase cam. A
--- dashcam is the same feed, labelled with the vehicle the officer is sitting in.
+-- officer sees, from whatever camera they are playing on. A dashcam is the same feed,
+-- labelled with the vehicle they are sitting in. FirstPerson below can force them into
+-- first person while watched, but it is off by default: see the note on that setting.
 return {
     -- Whether the Cameras section works at all. Off by default: every viewer costs roughly
     -- the profile bitrate of server uplink, the same as a live stream.
@@ -23,10 +23,14 @@ return {
     -- Whether an officer must be on duty to appear in the grid.
     RequireDuty = true,
 
-    -- Put a broadcasting officer into first person for as long as they are being watched,
-    -- and restore the view they had when the last viewer leaves. Turn this off if you would
-    -- rather the feed be whatever camera the officer is playing on.
-    FirstPerson = true,
+    -- Put a broadcasting officer into first person for as long as they are being watched, and
+    -- restore the view they had when the last viewer leaves.
+    --
+    -- OFF by default, and think before turning it on: the capture is the officer's own rendered
+    -- frame, so this does not change the camera for the viewer, it changes it for the OFFICER,
+    -- mid-roleplay, because somebody opened their tile. Left off, the feed is simply whatever
+    -- camera they are playing on, which is the honest reading of a body-worn camera anyway.
+    FirstPerson = false,
 
     Dashcam = {
         -- Whether an occupied police vehicle gets its own tile in the grid.
@@ -52,33 +56,57 @@ return {
         -- Whether the grid streams live thumbnails at all. With this off the tiles render as
         -- offline cards and a feed is only established when an officer is opened full screen.
         Enabled = true,
-        Fps     = 4,
-        Width   = 320,
-        Bitrate = 120000,
+        Fps     = 5,
+        Width   = 384,
+        Bitrate = 220000,
     },
 
-    -- The full-screen profile, established only for the one camera an officer opened.
+    -- The full-screen profile, established only for the one camera an officer opened. Only ever
+    -- one of these runs per viewer, so it can afford to be a real picture rather than a thumbnail.
+    -- Width is capped by the broadcasting officer's own game resolution: asking for more than they
+    -- render buys nothing but bitrate.
     Fullscreen = {
-        Fps     = 20,
-        Width   = 720,
-        Bitrate = 800000,
+        Fps     = 30,
+        Width   = 1600,
+        Bitrate = 8000000,
     },
 
     -- How often (ms) the broadcaster emits a chunk. Lower is lower latency and slightly
     -- more overhead.
     TimesliceMs = 400,
 
-    -- How often (ms) the broadcaster re-anchors with a fresh stream header, so a terminal
-    -- opening a camera that has been running for a while gets a picture quickly.
-    KeyframeMs = 4000,
+    -- How often (ms) the broadcaster re-anchors with a fresh stream header.
+    --
+    -- Every re-anchor restarts the encoder, which restarts the stream clock, which makes every
+    -- terminal already watching rebuild its player and show a visible break. So this wants to be
+    -- RARE, not frequent: the relay asks for a fresh header the moment somebody actually joins, so
+    -- a terminal opening a long-running camera still gets a picture quickly without everyone else
+    -- paying for a cut on the same interval.
+    KeyframeMs = 20000,
 
     -- Per-viewer latent send ceiling (bytes/s) the server paces each chunk onto the wire
     -- with. Chunks cross the NUI boundary as base64, which is about a third larger than the
     -- encoded video itself, so leave headroom over the bitrates above.
-    RelayBytesPerSec = 512 * 1024,
+    RelayBytesPerSec = 2048 * 1024,
 
     -- Terminals allowed on one officer's camera at once (0 = unlimited).
     MaxViewers = 6,
+
+    -- Whether a terminal may take the picture straight from the officer's client, with this server
+    -- carrying nothing but the handshake that sets it up. It needs no port, no certificate and no
+    -- configuration of its own: the STUN and TURN settings the phone's voice mesh already uses
+    -- (configs/voice.lua) decide whether two clients can reach each other, and a pair that cannot
+    -- falls back to the path below on its own. Neither end sees more than the picture taking a
+    -- moment longer to start.
+    --
+    -- A camera every terminal watches this way stops encoding for the server entirely.
+    PeerToPeer = true,
+
+    -- Direct connections one camera may hand out at once (0 = unlimited). Each one is an upload
+    -- from the broadcasting officer's own connection rather than from the server, so this sits
+    -- below MaxViewers on purpose: terminals past it watch through the server instead, which costs
+    -- the officer nothing.
+    PeerMaxViewers = 3,
 
     -- Seconds a viewer may go quiet before the server drops them and, if they were the last
     -- one, tells the officer's client to stop encoding. The terminal refreshes the grid well

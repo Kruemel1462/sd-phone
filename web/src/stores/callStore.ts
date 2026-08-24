@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+import { subscribeNui } from '@/hooks/useNuiEvent';
+
 
 type Phase = 'incoming' | 'outgoing' | 'active';
 
@@ -50,3 +52,9 @@ export const useCallStore = create<CallState>((set, get) => ({
     }),
     reconcile: (cur) => (cur ? get().hydrate(cur) : get().ended()),
 }));
+
+subscribeNui('sd-phone:call:incoming',  d => useCallStore.getState().incoming(d));
+subscribeNui('sd-phone:call:outgoing',  d => useCallStore.getState().outgoing(d));
+subscribeNui('sd-phone:call:connected', d => useCallStore.getState().connected(d));
+subscribeNui('sd-phone:call:ended',     () => useCallStore.getState().ended());
+subscribeNui('sd-phone:call:roster',    d => useCallStore.getState().roster(d ?? {}));

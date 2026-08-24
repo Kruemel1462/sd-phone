@@ -2,6 +2,7 @@ import { t } from '@/i18n';
 import { relTimeCompact } from '@/lib/time';
 import { fetchNui, isFiveM } from '@/core/nui';
 import { apiData as call } from '@/core/api';
+import type { RelayGrant } from '@/shared/mediaSocket';
 import {
     avatarFor, DEV_COMMENTS, DEV_DISCOVER, DEV_ME, DEV_MY_POSTS, DEV_NOTIFS, DEV_POSTS, DEV_TRENDS,
     type VComment, type VLive, type VNotif, type VNotifKind, type VPost, type VProfile, type VUser,
@@ -19,10 +20,18 @@ export interface LiveJoin {
     frame?:    string;
     viewers:   number;
     startedAt: number;
+    relay:     RelayGrant | null;
 }
 
 export interface LiveEncoderConfig { bitrate: number; fps: number; timesliceMs: number; keyframeMs: number }
 const DEFAULT_ENC: LiveEncoderConfig = { bitrate: 900000, fps: 25, timesliceMs: 250, keyframeMs: 4000 };
+
+export interface LiveSession {
+    liveId:    string;
+    startedAt: number;
+    enc:       LiveEncoderConfig;
+    streamId:  string | null;
+}
 
 function relTime(ms: number): string {
     return relTimeCompact(ms, {
@@ -112,14 +121,14 @@ export async function apiComments(postId: string): Promise<VComment[]> {
     return (await call<{ comments: SrvComment[] }>('sd-phone:vibez:comments', { postId }))?.comments.map(mapComment) ?? [];
 }
 
-export async function apiAddComment(postId: string, text: string): Promise<{ comment: VComment; count: number } | null> {
+export async function apiAddComment(postId: string, text: string, gifUrl?: string): Promise<{ comment: VComment; count: number } | null> {
     if (!isFiveM) {
         return {
-            comment: { id: 'me-' + Date.now(), user: { id: 'dev', handle: 'dev', avatar: DEV_ME.avatar, verified: true }, text, likes: 0, liked: false, time: t('vibez.justNow', 'Just now') },
+            comment: { id: 'me-' + Date.now(), user: { id: 'dev', handle: 'dev', avatar: DEV_ME.avatar, verified: true }, text, gifUrl, likes: 0, liked: false, time: t('vibez.justNow', 'Just now') },
             count: (DEV_COMMENTS[postId]?.length ?? 0) + 1,
         };
     }
-    const r = await call<{ comment: SrvComment; count: number }>('sd-phone:vibez:addComment', { postId, text });
+    const r = await call<{ comment: SrvComment; count: number }>('sd-phone:vibez:addComment', { postId, text, gifUrl });
     return r?.comment ? { comment: mapComment(r.comment), count: r.count } : null;
 }
 
@@ -176,20 +185,34 @@ export async function apiToggleFollow(handle: string): Promise<boolean> {
 
 export interface SearchUser extends VUser { following: boolean }
 
-export async function apiSearch(query: string): Promise<SearchUser[]> {
+export interface SearchResults { users: SearchUser[]; posts: VPost[] }
+
+export async function apiSearch(query: string): Promise<SearchResults> {
+    const q = query.trim().toLowerCase();
     if (!isFiveM) {
-        const q = query.trim().toLowerCase();
-        if (!q) return [];
+        if (!q) return { users: [], posts: [] };
+        const bare = q.replace(/^#/, '');
         const seen = new Set<string>();
         const users: SearchUser[] = [];
         for (const u of [...DEV_POSTS, ...DEV_DISCOVER].map(p => p.user)) {
-            if (seen.has(u.handle) || !u.handle.toLowerCase().includes(q)) continue;
+            if (seen.has(u.handle) || !u.handle.toLowerCase().includes(bare)) continue;
             seen.add(u.handle);
             users.push({ ...u, following: false });
         }
-        return users;
+        const byId = new Set<string>();
+        const posts: VPost[] = [];
+        for (const p of [...DEV_POSTS, ...DEV_DISCOVER]) {
+            if (byId.has(p.id) || !p.caption.toLowerCase().includes(bare)) continue;
+            byId.add(p.id);
+            posts.push(p);
+        }
+        return { users, posts };
     }
-    return (await call<{ users: SearchUser[] }>('sd-phone:vibez:search', { query }))?.users.map(u => ({ ...u, avatar: avatarFor(u.handle, u.avatar) })) ?? [];
+    const r = await call<{ users: SearchUser[]; posts: SrvPost[] }>('sd-phone:vibez:search', { query });
+    return {
+        users: r?.users.map(u => ({ ...u, avatar: avatarFor(u.handle, u.avatar) })) ?? [],
+        posts: r?.posts.map(mapPost) ?? [],
+    };
 }
 
 export async function apiActivity(): Promise<VNotif[]> {
@@ -208,17 +231,28 @@ export async function apiLives(): Promise<VLive[]> {
     return (r?.lives ?? []).map(l => ({ ...l, user: fixUser(l.user) }));
 }
 
-export async function apiLiveStart(): Promise<{ liveId: string; startedAt: number; enc: LiveEncoderConfig } | null> {
-    if (!isFiveM) return { liveId: 'dev-live', startedAt: Date.now(), enc: DEFAULT_ENC };
-    const r = await call<{ liveId: string; startedAt: number; enc?: Partial<LiveEncoderConfig> }>('sd-phone:vibez:liveStart');
+export async function apiLiveStart(): Promise<LiveSession | null> {
+    if (!isFiveM) return { liveId: 'dev-live', startedAt: Date.now(), enc: DEFAULT_ENC, streamId: null };
+    const r = await call<{ liveId: string; startedAt: number; enc?: Partial<LiveEncoderConfig>; streamId?: string }>('sd-phone:vibez:liveStart');
     if (!r) return null;
-    return { liveId: r.liveId, startedAt: r.startedAt, enc: { ...DEFAULT_ENC, ...(r.enc ?? {}) } };
+    return {
+        liveId:    r.liveId,
+        startedAt: r.startedAt,
+        enc:       { ...DEFAULT_ENC, ...(r.enc ?? {}) },
+        streamId:  typeof r.streamId === 'string' && r.streamId.length > 0 ? r.streamId : null,
+    };
 }
 
-export async function apiLiveJoin(liveId: string): Promise<LiveJoin | null> {
-    if (!isFiveM) return { liveId, host: { id: 'luna.vibe', handle: 'luna.vibe', avatar: avatarFor('luna.vibe'), verified: true }, viewers: 1, startedAt: Date.now() };
-    const r = await call<LiveJoin>('sd-phone:vibez:liveJoin', { liveId });
-    return r ? { ...r, host: fixUser(r.host) } : null;
+export async function apiLiveJoin(liveId: string, relay = false): Promise<LiveJoin | null> {
+    if (!isFiveM) return { liveId, host: { id: 'luna.vibe', handle: 'luna.vibe', avatar: avatarFor('luna.vibe'), verified: true }, viewers: 1, startedAt: Date.now(), relay: null };
+    const r = await call<LiveJoin>('sd-phone:vibez:liveJoin', { liveId, relay });
+    if (!r) return null;
+    const grant = r.relay ?? null;
+    return {
+        ...r,
+        host:  fixUser(r.host),
+        relay: grant && typeof grant.token === 'string' && typeof grant.url === 'string' ? grant : null,
+    };
 }
 
 export async function apiLiveLeave(liveId: string): Promise<void> {
@@ -249,4 +283,9 @@ export async function apiLiveFrame(liveId: string, frame: string): Promise<void>
 export async function apiLiveChunk(liveId: string, chunk: string, init: boolean, mime?: string): Promise<void> {
     if (!isFiveM) return;
     await fetchNui('sd-phone:vibez:liveChunk', { liveId, chunk, init, mime });
+}
+
+export async function apiLiveTransport(liveId: string, relay: boolean): Promise<void> {
+    if (!isFiveM) return;
+    await fetchNui('sd-phone:vibez:liveTransport', { liveId, relay });
 }

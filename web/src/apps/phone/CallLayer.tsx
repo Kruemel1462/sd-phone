@@ -106,7 +106,7 @@ export function CallLayer({ wallpaper }: { wallpaper?: string }) {
         void getCurrentCall().then(cur => {
             if (useCallStore.getState().channel !== before) return;
             useCallStore.getState().reconcile(cur);
-        });
+        }).catch(() => {});
     }, []);
 
     useEffect(reconcile, [reconcile]);

@@ -170,7 +170,7 @@ export function SetupFlow({ onDone, onHelloChange }: Props) {
             {showHello && (
                 <div
                     className={`absolute inset-0 z-20 flex flex-col overflow-hidden ${helloLifting ? 'animate-hello-lift' : ''}`}
-                    style={{ background: theme === 'dark' ? HELLO_BG_DARK : HELLO_BG_LIGHT, willChange: 'transform, opacity' }}
+                    style={{ background: HELLO_BG_LIGHT, willChange: 'transform, opacity' }}
                 >
                     <HelloAurora />
                     <div className="h-[54px] shrink-0" aria-hidden />
@@ -211,9 +211,6 @@ const HELLO_FONT = '"Great Vibes", "Snell Roundhand", "Segoe Script", cursive';
 const HELLO_BG_LIGHT =
     'radial-gradient(70% 45% at 50% 38%, rgba(150,170,255,0.07), transparent 70%),' +
     'radial-gradient(140% 100% at 50% 40%, #ffffff 0%, #eef0f6 50%, #e3e6ef 100%)';
-const HELLO_BG_DARK =
-    'radial-gradient(70% 45% at 50% 38%, rgba(150,170,255,0.13), transparent 70%),' +
-    'radial-gradient(140% 100% at 50% 40%, #242429 0%, #141417 52%, #000000 100%)';
 
 function HelloStage({ onContinue, frozen = false }: { onContinue: () => void; frozen?: boolean }) {
     const [idx, setIdx] = useState(0);

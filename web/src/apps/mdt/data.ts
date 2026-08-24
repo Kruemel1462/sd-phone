@@ -1,3 +1,5 @@
+import type { RelayGrant } from '@/shared/mediaSocket';
+
 export interface EvidenceItem {
     url:   string;
     label: string;
@@ -10,6 +12,7 @@ export type MdtSection =
     | 'vehicles'
     | 'weapons'
     | 'cameras'
+    | 'cctv'
     | 'reports'
     | 'cases'
     | 'warrants'
@@ -29,7 +32,7 @@ export type MdtSection =
 export type DepartmentType = 'leo' | 'ems' | 'doj';
 
 export const LEO_SECTIONS: readonly MdtSection[] = [
-    'home', 'dispatch', 'cameras', 'profiles', 'vehicles', 'weapons', 'reports', 'cases',
+    'home', 'dispatch', 'cameras', 'cctv', 'profiles', 'vehicles', 'weapons', 'reports', 'cases',
     'warrants', 'offences', 'sops', 'employees', 'affairs', 'chat', 'jail', 'phone', 'logs',
 ] as const;
 
@@ -60,6 +63,7 @@ export type MdtPermission =
     | 'weapons.view'
     | 'weapons.edit'
     | 'cameras.view'
+    | 'cctv.view'
     | 'reports.view'
     | 'reports.create'
     | 'reports.edit.own'
@@ -115,6 +119,7 @@ export const SECTION_PERMISSION: Record<MdtSection, MdtPermission> = {
     vehicles:  'vehicles.view',
     weapons:   'weapons.view',
     cameras:   'cameras.view',
+    cctv:      'cctv.view',
     reports:   'reports.view',
     cases:     'cases.view',
     warrants:  'warrants.view',
@@ -376,6 +381,7 @@ export interface CameraStream {
     mime:     string | null;
     status:   CameraStatus;
     viewers:  number;
+    relay:    RelayGrant | null;
 }
 
 export interface Charge {

@@ -85,10 +85,62 @@ function decrypt(blob) {
 // the module's exports object instead. Resolving both keeps the file loadable off-server.
 const registerExport = typeof exports === 'function' ? exports : global.exports;
 
+// lb-phone hashed with bcrypt, which Node has no built-in for. Verifying it is what lets a
+// migrated player sign in with the password they already know instead of being locked out of an
+// account nobody recorded the owner of. Verify only: nothing here ever writes a bcrypt hash, and
+// the accounts engine rewrites the account to scrypt the first time one is accepted.
+let bcrypt = null;
+try {
+    bcrypt = require('./server/vendor/bcryptjs.js');
+} catch (err) {
+    console.log(`^3[sd-phone:crypto]^0 bcrypt helper did not load (${err.message}); lb-phone passwords cannot be verified.`);
+}
+
+const BCRYPT_RE = /^\$2[abxy]\$\d{2}\$[./A-Za-z0-9]{53}$/;
+
+function verifyBcrypt(plain, stored) {
+    if (!bcrypt || typeof plain !== 'string' || typeof stored !== 'string') return false;
+    if (!BCRYPT_RE.test(stored)) return false;
+    try {
+        return bcrypt.compareSync(plain, stored) === true;
+    } catch (err) {
+        return false;
+    }
+}
+
 registerExport('sdCryptoReady', () => true);
 registerExport('sdCryptoHashPassword', hashPassword);
 registerExport('sdCryptoVerifyPassword', verifyPassword);
+registerExport('sdCryptoVerifyBcrypt', verifyBcrypt);
 registerExport('sdCryptoEncrypt', encrypt);
 registerExport('sdCryptoDecrypt', decrypt);
 registerExport('sdCryptoSha256', (s) => crypto.createHash('sha256').update(String(s), 'utf8').digest('hex'));
 registerExport('sdCryptoRandomHex', (n) => crypto.randomBytes(Math.min(64, Math.max(1, Number(n) || 32))).toString('hex'));
+
+// The relay token helpers. `server/media/tokens.lua` signs every grant through these, and
+// `media-server/src/token.js` verifies what comes out, so the two implementations have to agree
+// byte for byte: HMAC-SHA256 over the ASCII string `sdmr1.<base64url(claims)>`, with the raw
+// signature bytes (not their hex) base64url'd as the third part.
+const RELAY_KEY_RE = /^[0-9a-f]{64}$/;
+
+function relayKey(keyHex) {
+    return typeof keyHex === 'string' && RELAY_KEY_RE.test(keyHex) ? Buffer.from(keyHex, 'hex') : null;
+}
+
+function b64url(buf) {
+    return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+registerExport('sdCryptoHmacHex', (keyHex, msg) => {
+    const key = relayKey(keyHex);
+    if (!key || typeof msg !== 'string') return null;
+    return crypto.createHmac('sha256', key).update(msg, 'utf8').digest('hex');
+});
+
+registerExport('sdCryptoRelayToken', (keyHex, payloadJson) => {
+    const key = relayKey(keyHex);
+    if (!key || typeof payloadJson !== 'string' || payloadJson === '') return null;
+    const part = b64url(Buffer.from(payloadJson, 'utf8'));
+    const mac = crypto.createHmac('sha256', key).update(`sdmr1.${part}`, 'utf8').digest();
+    return `sdmr1.${part}.${b64url(mac)}`;
+});

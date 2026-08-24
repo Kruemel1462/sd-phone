@@ -1,7 +1,11 @@
 -- lb-phone -> sd-phone data migration. When a server switches from lb-phone to sd-phone this
--- carries each player's essentials across on first boot, so people keep their phone instead of
--- starting over: phone number + lock passcode, contacts, call history, blocked numbers, SMS
--- threads (incl. groups), photos + albums, and notes.
+-- carries each player's essentials across, so people keep their phone instead of starting over:
+-- phone number + lock passcode, contacts, call history, blocked numbers, SMS threads (incl.
+-- groups), photos + albums, and notes.
+--
+-- Nothing happens until you ask for it. /phoneadmin -> Migration previews what is on the other
+-- side, takes a domain selection and streams the run; set `enabled` below if you would rather it
+-- ran by itself on the next boot instead.
 --
 -- It is idempotent and non-destructive. A marker row (phone_migrations) stops it running twice,
 -- every write is INSERT IGNORE / fill-only, and a player who already has sd-phone data is never
@@ -9,9 +13,16 @@
 -- no-op. The join is lb-phone's phone owner id -> framework citizenid, and each player's lb-phone
 -- number is adopted as their sd-phone number so every contact / thread / call log still lines up.
 return {
-    -- Import automatically on resource start. Turn this off to only ever run it by hand, via the
-    -- `sdphone:migrate` server-console command.
-    enabled = true,
+    -- Import automatically on resource start. Off by default: this reads millions of rows and runs
+    -- the server heavy for as long as it takes, which is not something to do to a live server
+    -- nobody was expecting it on.
+    --
+    -- Leave it off and you drive the import yourself from /phoneadmin -> Migration, which previews
+    -- what lb-phone actually holds, lets you pick the domains, and streams the run with a live log
+    -- and an ETA. Turn it on if you would rather it happen by itself on the next boot and never
+    -- think about it again; it is idempotent, so once there is nothing left to import it is a
+    -- cheap no-op. `sdphone:migrate` from the server console works either way.
+    enabled = false,
 
     -- lb-phone's table prefix. Its tables are all phone_* (phone_phones, phone_phone_contacts,
     -- ...). Only touch this if you renamed them; it must be plain [a-z0-9_] or it is ignored.

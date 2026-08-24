@@ -160,6 +160,12 @@ return {
     HoldAnimation = true,
     AnimDict      = 'cellphone@',
     AnimName      = 'cellphone_text_read_base',
+
+    -- Held for the whole of a call, in place of the reading anim above, so the ped puts the phone
+    -- to their ear. Kept up after the phone is stowed: the call is still running, so the arm stays
+    -- there rather than dropping the moment the UI closes.
+    CallAnimDict  = 'cellphone@',
+    CallAnimName  = 'cellphone_call_listen_base',
     PropPrefix    = 'sd_phone_',
     PropBone      = 28422,   -- SKEL_R_Hand
 

@@ -291,6 +291,8 @@ export type NuiMessage =
     | { action: 'sd-phone:music:receive'; data: MusicSharePush }
     | { action: 'sd-phone:nowPlaying:set';   data: { appId: string; track: ExternalNowPlayingTrack } }
     | { action: 'sd-phone:nowPlaying:clear'; data: { appId: string } }
+    | { action: 'sd-phone:cctv:enter'; data: { cameraId: string; label: string; category: string } }
+    | { action: 'sd-phone:cctv:exit';  data: Record<string, never> }
     | { action: 'sd-phone:lockscreenWidget:show'; data: ActiveLockscreenWidget }
     | { action: 'sd-phone:lockscreenWidget:hide'; data: { key: string } }
     | { action: 'sd-phone:pages:feed';       data: ClassifiedFeedPush }
@@ -413,7 +415,8 @@ export type NuiMessage =
     | { action: 'sd-phone:photogram:postRemoved'; data: { postId: string } }
     | { action: 'sd-phone:photogram:followChanged'; data: { target: string; status: 'none' | 'pending' | 'accepted' | 'self' } }
     | { action: 'sd-phone:photogram:liveFrame';   data: { liveId: string; frame: string } }
-    | { action: 'sd-phone:photogram:liveChunk';   data: { liveId: string; chunk: string; init?: boolean; mime?: string } }
+    | { action: 'sd-phone:photogram:liveChunk';   data: { liveId: string; chunk: string; init?: boolean; mime?: string; gen?: number } }
+    | { action: 'sd-phone:photogram:liveTransport'; data: { liveId: string; transport: 'relay' | 'event' } }
     | { action: 'sd-phone:photogram:liveComment'; data: { liveId: string; comment: { id: string; user: PhotogramUser; text: string } } }
     | { action: 'sd-phone:photogram:liveHeart';   data: { liveId: string } }
     | { action: 'sd-phone:photogram:liveViewers'; data: { liveId: string; viewers: number } }
@@ -425,7 +428,8 @@ export type NuiMessage =
     | { action: 'sd-phone:vibez:postRemoved';   data: { postId: string } }
     | { action: 'sd-phone:vibez:followChanged'; data: { target: string; following: boolean } }
     | { action: 'sd-phone:vibez:liveFrame';     data: { liveId: string; frame: string } }
-    | { action: 'sd-phone:vibez:liveChunk';     data: { liveId: string; chunk: string; init?: boolean; mime?: string } }
+    | { action: 'sd-phone:vibez:liveChunk';     data: { liveId: string; chunk: string; init?: boolean; mime?: string; gen?: number } }
+    | { action: 'sd-phone:vibez:liveTransport'; data: { liveId: string; transport: 'relay' | 'event' } }
     | { action: 'sd-phone:vibez:liveComment';   data: { liveId: string; comment: { id: string; user: VibezUser; text: string } } }
     | { action: 'sd-phone:vibez:liveHeart';     data: { liveId: string } }
     | { action: 'sd-phone:vibez:liveViewers';   data: { liveId: string; viewers: number } }
@@ -441,6 +445,7 @@ export type NuiMessage =
     | { action: 'sd-phone:mdt:chat';     data: { message: ChatMsg } }
     | { action: 'sd-phone:mdt:bulletin'; data: { bulletins: Bulletin[] } }
     | { action: 'sd-phone:mdt:warrant';  data: { citizenid: string; wanted: boolean } }
+    | { action: 'sd-phone:mdt:cameraTransport'; data: { citizenid: string; transport: 'relay' | 'event' } }
     | { action: 'sd-phone:racing:racesChanged' }
     | { action: 'sd-phone:racing:standings';  data: { raceId: string; entries: Standing[] } }
     | { action: 'sd-phone:racing:raceResult'; data: RaceResult }
@@ -457,6 +462,7 @@ export type NuiMessage =
     | { action: 'sd-phone:racing:board:lineup'; data: { state: LineupState | null } }
     | { action: 'sd-phone:wipe' }
     | { action: 'sd-phone:admin:open'; data: { adminName?: string; sim?: boolean; racing?: boolean } }
+    | { action: 'sd-phone:admin:migrate'; data: import('@/admin/types').MigrationPush }
     | { action: 'chess:invited';  data: { fromSrc: string; fromName: string; lobbyId: string } }
     | { action: 'chess:lobby';    data: { id: string; host: string; public: boolean; wager: number; isHost: boolean; canStart: boolean; members: { name: string; you: boolean; host: boolean; color: 'w' | 'b' | 'random'; canAfford: boolean; ready: boolean; returned: boolean }[] } }
     | { action: 'chess:lobbyClosed'; data: Record<string, never> }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-    Bird, Camera, Clapperboard, Flag, Flame, Hash, Images, LayoutDashboard, MessageSquare, Newspaper,
+    Bird, Camera, Clapperboard, DatabaseZap, Flag, Flame, Hash, Images, LayoutDashboard, MessageSquare, Newspaper,
     ScrollText, Search, ShieldCheck, ShoppingBag, Skull, VolumeX, X,
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -12,6 +12,7 @@ import { AuditPage } from './pages/AuditPage';
 import { BirdyPage } from './pages/BirdyPage';
 import { ContentPage } from './pages/ContentPage';
 import { Dashboard } from './pages/Dashboard';
+import { MigrationPage } from './pages/MigrationPage';
 import { MutesPage } from './pages/MutesPage';
 import { NumbersPage } from './pages/NumbersPage';
 import { RacingPage } from './pages/RacingPage';
@@ -20,7 +21,7 @@ import { PlayersPage } from './pages/PlayersPage';
 import { ToastHost, useToasts } from './ui';
 
 type PageId =
-    | 'dashboard' | 'players' | 'numbers' | 'birdy' | 'mutes' | 'audit'
+    | 'dashboard' | 'players' | 'numbers' | 'mutes' | 'audit' | 'migration' | 'birdy'
     | 'messages' | 'darkchat' | 'photogram' | 'vibez' | 'cherry' | 'marketplace' | 'pages' | 'gallery' | 'racing';
 
 interface NavItem { id: PageId; label: string; icon: React.ReactNode }
@@ -31,6 +32,7 @@ const NAV_MAIN: NavItem[] = [
     { id: 'numbers',   label: 'Numbers',   icon: <Hash size={15} /> },
     { id: 'mutes',     label: 'Mutes',     icon: <VolumeX size={15} /> },
     { id: 'audit',     label: 'Audit log', icon: <ScrollText size={15} /> },
+    { id: 'migration', label: 'Migration', icon: <DatabaseZap size={15} /> },
 ];
 
 const NAV_APPS: NavItem[] = [
@@ -38,7 +40,7 @@ const NAV_APPS: NavItem[] = [
     { id: 'messages',    label: 'Messages',    icon: <MessageSquare size={15} /> },
     { id: 'darkchat',    label: 'Dark Chat',   icon: <Skull size={15} /> },
     { id: 'photogram',   label: 'Photogram',   icon: <Camera size={15} /> },
-    { id: 'vibez',       label: 'Vibez',       icon: <Clapperboard size={15} /> },
+    { id: 'vibez',       label: 'Clout',       icon: <Clapperboard size={15} /> },
     { id: 'cherry',      label: 'Cherry',      icon: <Flame size={15} /> },
     { id: 'marketplace', label: 'Marketplace', icon: <ShoppingBag size={15} /> },
     { id: 'pages',       label: 'Pages',       icon: <Newspaper size={15} /> },
@@ -53,10 +55,11 @@ const PAGE_TITLE: Record<PageId, string> = {
     birdy:       'Squawk moderation',
     mutes:       'Active mutes',
     audit:       'Audit log',
+    migration:   'Migration - lb-phone import',
     messages:    'Messages (read-only)',
     darkchat:    'Dark Chat moderation',
     photogram:   'Photogram moderation',
-    vibez:       'Vibez moderation',
+    vibez:       'Clout moderation',
     cherry:      'Cherry profiles',
     marketplace: 'Marketplace moderation',
     pages:       'Pages moderation',
@@ -69,7 +72,7 @@ const CONTENT_PAGES: Record<string, { search: string; empty: string; deleteBody:
     messages:    { search: 'Filter sent texts by content or number',      empty: 'No messages yet.',            deleteBody: '' },
     darkchat:    { search: 'Filter messages by content, alias or room',   empty: 'No Dark Chat messages yet.',  deleteBody: 'The message and its reactions are permanently removed.' },
     photogram:   { search: 'Filter posts by caption or username',         empty: 'No Photogram posts yet.',     deleteBody: 'The post, its comments, likes and saves are permanently removed.' },
-    vibez:       { search: 'Filter vibes by caption or username',         empty: 'No Vibez posts yet.',         deleteBody: 'The vibe, its comments, likes and saves are permanently removed.' },
+    vibez:       { search: 'Filter posts by caption or username',         empty: 'No Clout posts yet.',         deleteBody: 'The post, its comments, likes and saves are permanently removed.' },
     cherry:      { search: 'Filter profiles by username, name or bio',    empty: 'No Cherry profiles yet.',     deleteBody: '' },
     marketplace: { search: 'Filter listings by title or description',     empty: 'No listings yet.',            deleteBody: 'The listing is permanently removed.' },
     pages:       { search: 'Filter posts by title or description',        empty: 'No posts yet.',               deleteBody: 'The post is permanently removed.' },
@@ -162,6 +165,7 @@ export function AdminPanel() {
                 the same 24px inset the device chassis sits at, which keeps it clear of the
                 bench's registration marks. */}
             <div
+                data-admin-surface
                 className={`admin-panel-in relative flex overflow-hidden bg-[#101114] ${
                     demoAdminOnly
                         ? 'h-full w-full rounded-xl'
@@ -220,6 +224,7 @@ export function AdminPanel() {
                         {page === 'mutes' && <MutesPage onOpenPlayer={openPlayer} toast={push} />}
                         {page === 'audit' && <AuditPage onOpenPlayer={openPlayer} />}
                         {page === 'racing' && <RacingPage onToast={push} />}
+                        {page === 'migration' && <MigrationPage toast={push} />}
                         {contentCfg && (
                             <ContentPage
                                 key={page === 'gallery' ? `gallery:${gallerySeed}` : page}

@@ -120,13 +120,29 @@ RegisterNetEvent('sd-phone:client:mdt:warrant', function(data)
 end)
 
 ---Server push: one media segment from a unit's camera, addressed to this terminal only.
----@param data table { citizenid, gen, chunk, init, mime? }
+---@param data table { citizenid, gen, seq, chunk, init, mime? }
 RegisterNetEvent('sd-phone:client:mdt:cameraChunk', function(data)
     SendNUIMessage({ action = 'sd-phone:mdt:cameraChunk', data = data })
+end)
+
+---Server push: the cached opening of a run, so a terminal that joined mid-shift has something to
+---start from. Header first, then every chunk since it, in one payload precisely so the parts cannot
+---arrive out of order the way separate latent sends can.
+---@param data table { citizenid, gen, seq, mime?, chunks }
+RegisterNetEvent('sd-phone:client:mdt:cameraPrime', function(data)
+    SendNUIMessage({ action = 'sd-phone:mdt:cameraPrime', data = data })
 end)
 
 ---Server push: a camera this terminal was watching has gone off the air.
 ---@param data table { citizenid, reason }
 RegisterNetEvent('sd-phone:client:mdt:cameraOff', function(data)
     SendNUIMessage({ action = 'sd-phone:mdt:cameraOff', data = data })
+end)
+
+---Server push: the transport a unit's camera publishes on changed. The terminal follows the
+---publisher rather than choosing for itself, and it keeps listening on the event path above
+---whichever way this points, so a downgrade costs a rebuilt picture and nothing else.
+---@param data table { citizenid, transport }
+RegisterNetEvent('sd-phone:client:mdt:cameraTransport', function(data)
+    SendNUIMessage({ action = 'sd-phone:mdt:cameraTransport', data = data })
 end)

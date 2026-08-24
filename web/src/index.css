@@ -245,9 +245,29 @@ html, body, #root {
 .admin-panel-in { animation: admin-in 0.52s cubic-bezier(0.16, 1, 0.3, 1) both; }
 .admin-scrim-in { animation: admin-scrim-in 0.32s ease-out both; }
 
+/* A dialog inside the panel arrives on the same curve as the panel itself, just quicker: it is a
+   smaller thing landing on top of something already there, and matching the full 0.52s would read
+   as sluggish. Leaving is faster still, the way a dismissal should be. */
+@keyframes admin-dialog-in {
+    from { transform: scale(0.94); opacity: 0; }
+    to   { transform: scale(1);    opacity: 1; }
+}
+@keyframes admin-dialog-out {
+    from { transform: scale(1);    opacity: 1; }
+    to   { transform: scale(0.96); opacity: 0; }
+}
+@keyframes admin-scrim-out { from { opacity: 1; } to { opacity: 0; } }
+
+.admin-dialog-in   { animation: admin-dialog-in 0.26s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.admin-dialog-out  { animation: admin-dialog-out 0.16s ease-in both; }
+.admin-scrim-out   { animation: admin-scrim-out 0.16s ease-in both; }
+
 @media (prefers-reduced-motion: reduce) {
     .admin-panel-in,
-    .admin-scrim-in { animation: none; }
+    .admin-scrim-in,
+    .admin-dialog-in,
+    .admin-dialog-out,
+    .admin-scrim-out { animation: none; }
 }
 
 @keyframes boot-rise {
@@ -913,4 +933,9 @@ input[type='number'] {
 .mdt-stagger > *:nth-child(n+8)  { animation-delay: 180ms; }
 @media (prefers-reduced-motion: reduce) {
     .mdt-stagger > * { animation: none; }
+}
+
+@keyframes cctv-drift {
+    from { transform: translateY(0); }
+    to   { transform: translateY(9px); }
 }

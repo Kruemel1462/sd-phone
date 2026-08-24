@@ -16,6 +16,8 @@ local weapons   = require 'server.mdt.weapons'
 ---@type table Bodycams and dashcams (server.mdt.cameras): the demand-gated live relay behind the
 ---Cameras section.
 local cameras   = require 'server.mdt.cameras'
+---@type table Fixed CCTV cameras (server.mdt.cctv): the police-only gate on looking through one.
+local cctv      = require 'server.mdt.cctv'
 ---@type table Reports and cases (server.mdt.paperwork).
 local paperwork = require 'server.mdt.paperwork'
 ---@type table Warrants (server.mdt.warrants).
@@ -104,6 +106,7 @@ local ROUTES = {
     { 'cameras:list',        cameras,   'list' },
     { 'cameras:watch',       cameras,   'watch' },
     { 'cameras:unwatch',     cameras,   'unwatch' },
+    { 'cctv:watch',          cctv,      'watch' },
 
     { 'reports:list',        paperwork, 'reportsList' },
     { 'reports:get',         paperwork, 'reportsGet' },
@@ -291,4 +294,45 @@ end)
 exports('mdtIsWanted', function(citizenid)
     if not ENABLED then return false end
     return warrants.isWanted(citizenid) == true
+end)
+
+---Files a firearm on the registry from outside the terminal
+---(exports['sd-phone']:mdtRegisterWeapon). This is the hook a gun shop, crafting bench or admin
+---script calls the moment it hands a weapon over, so the serial on the frame is on the registry
+---before an officer ever runs it. Omit `serial` and one is minted and handed back.
+---@param data table { serial?, name, class?, owner?, notes?, registeredBy? }
+---@return string|false serial the serial it was filed under, false on refusal
+---@return string? message refusal reason
+exports('mdtRegisterWeapon', function(data)
+    if not ENABLED then return false, 'The MDT is disabled' end
+    local serial, message = weapons.register(data)
+    return serial or false, message
+end)
+
+---One registry record by serial (exports['sd-phone']:mdtGetWeapon).
+---@param serial string
+---@return table|nil weapon
+exports('mdtGetWeapon', function(serial)
+    if not ENABLED then return nil end
+    return weapons.find(serial)
+end)
+
+---Every firearm registered to a citizen (exports['sd-phone']:mdtGetWeaponsByOwner).
+---@param citizenid string
+---@return table[] weapons
+exports('mdtGetWeaponsByOwner', function(citizenid)
+    if not ENABLED then return {} end
+    return weapons.byOwner(citizenid)
+end)
+
+---Moves a firearm to another registry state (exports['sd-phone']:mdtSetWeaponStatus): the hook for
+---the script that seized it into evidence, destroyed it, or logged it stolen.
+---@param serial string
+---@param status string 'registered' | 'stolen' | 'seized' | 'destroyed'
+---@param byCitizenid? string who to record as having changed it
+---@return boolean ok
+---@return string? message refusal reason
+exports('mdtSetWeaponStatus', function(serial, status, byCitizenid)
+    if not ENABLED then return false, 'The MDT is disabled' end
+    return weapons.setStatus(serial, status, byCitizenid)
 end)

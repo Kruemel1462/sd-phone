@@ -30,6 +30,10 @@ local CLIPS = {
         onFoot = { dict = 'amb@code_human_wander_texting@male@base',          anim = 'static', blendIn = 8.0,    blendOut = -8.0,    flags = READ_FLAGS },
         inCar  = { dict = 'cellphone@in_car@ds', anim = 'cellphone_text_in', blendIn = 8.0,    blendOut = -8.0,    flags = READ_FLAGS },
     },
+    call = {
+        onFoot = { dict = 'cellphone@',          anim = 'cellphone_call_listen_base', blendIn = 8.0,  blendOut = -8.0,    flags = READ_FLAGS },
+        inCar  = { dict = 'cellphone@in_car@ds', anim = 'cellphone_call_listen_base', blendIn = 8.0,  blendOut = -8.0,    flags = READ_FLAGS },
+    },
     camera = {
         onFoot = { dict = 'cellphone@self',      anim = 'selfie',                   blendIn = 8.0,    blendOut = -8.0,    flags = FRAME_FLAGS },
         inCar  = { dict = 'cellphone@self',      anim = 'selfie',                   blendIn = 8.0,    blendOut = -8.0,    flags = FRAME_FLAGS },
@@ -43,6 +47,13 @@ local CLIPS = {
 if config.Phone.AnimDict and config.Phone.AnimName then
     CLIPS.default.onFoot = {
         dict = config.Phone.AnimDict, anim = config.Phone.AnimName,
+        blendIn = 8.0, blendOut = -8.0, flags = READ_FLAGS,
+    }
+end
+
+if config.Phone.CallAnimDict and config.Phone.CallAnimName then
+    CLIPS.call.onFoot = {
+        dict = config.Phone.CallAnimDict, anim = config.Phone.CallAnimName,
         blendIn = 8.0, blendOut = -8.0, flags = READ_FLAGS,
     }
 end
@@ -68,17 +79,21 @@ local color = config.Phone.DefaultColor or 'black'
 local prop
 ---@type boolean True while a text field in the phone has focus
 local typing = false
+---@type boolean True while a call is live, whether it is still ringing out or already connected.
+local inCall = false
 ---@type table<integer, true> Prop models this client has already failed to stream.
 local unavailableModels = {}
 
----Whether our pose applies: the phone is out (or the torch is lit), and the native cell cam is not
----the one framing. That native animates its own pose and spawns its own phone, so ours stands down
----for it; the scripted cam animates nothing, so ours has to stay up.
+---Whether our pose applies: the phone is out (or the torch is lit, or a call is live), and the
+---native cell cam is not the one framing. That native animates its own pose and spawns its own
+---phone, so ours stands down for it; the scripted cam animates nothing, so ours has to stay up.
+---A live call holds the pose through a stow, so putting the phone away mid-call keeps the ped
+---holding it rather than dropping their arm while they are still talking.
 ---@return boolean
 function pose.shouldHold()
     if not config.Phone.HoldAnimation then return false end
     if cameraOn and not phonecam.active() then return false end
-    return phoneOpen or torchOn
+    return phoneOpen or torchOn or inCall
 end
 
 ---The clip that should be held right now. Every caller reads the pose through this, so adding a
@@ -97,6 +112,10 @@ local function currentClip()
         action = landscape and 'landscape' or 'camera'
     elseif typing then
         action = "typing"
+    elseif inCall then
+        -- A live call outranks the reading pose whether the phone is on screen or stowed, so the
+        -- ped keeps it at their ear for the whole call instead of only while the UI is up.
+        action = 'call'
     end
     return CLIPS[action][IsPedInAnyVehicle(cache.ped, true) and 'inCar' or 'onFoot']
 end
@@ -201,11 +220,12 @@ function pose.stop()
 end
 
 ---Mirrors the phone's state, then starts or stops the pose to match it.
----@param state { open: boolean, torch: boolean, camera: boolean, color: string, typing: boolean }
+---@param state { open: boolean, torch: boolean, camera: boolean, color: string, typing: boolean, call: boolean }
 function pose.refresh(state)
     phoneOpen = state.open and true or false
     torchOn   = state.torch and true or false
     cameraOn  = state.camera and true or false
+    inCall    = state.call and true or false
     color     = state.color or color
     if state.typing ~= nil then typing = state.typing and true or false end
     if not phoneOpen then typing = false end

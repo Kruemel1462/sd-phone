@@ -182,6 +182,115 @@ local function ownerFrom(value)
     return cid, citizen.name or cid, nil
 end
 
+---@type string Characters a generated serial is drawn from. O/0 and I/1 are left out so a serial
+---read off a frame and typed into the terminal cannot land on a different firearm.
+local SERIAL_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+---A serial no record currently holds, for a caller that mints the firearm and has none of its own.
+---Bounded rather than looping: a saturated registry returns nil instead of hanging the shop script
+---that asked.
+---@return string|nil serial
+function weapons.newSerial()
+    for _ = 1, 10 do
+        local out = {}
+        for i = 1, 8 do
+            local n = math.random(#SERIAL_ALPHABET)
+            out[i] = SERIAL_ALPHABET:sub(n, n)
+        end
+        local serial = table.concat(out)
+        if not MySQL.scalar.await('SELECT 1 FROM phone_mdt_weapons WHERE serial = ? LIMIT 1', { serial }) then
+            return serial
+        end
+    end
+    return nil
+end
+
+---Files a firearm on the registry with no terminal behind it, for the gun shop, crafting bench or
+---admin script that creates the weapon in the first place. Validation is the officer path's, the
+---only difference being that there is no permission to check: a caller reaching this is already
+---server-side and trusted. An absent serial is minted rather than refused, because a shop knows the
+---weapon and the buyer but has no serial until one is issued.
+---@param data table { serial?, name, class?, owner?, notes?, registeredBy?, requireSerial? }
+---@return string|nil serial the serial the record was filed under
+---@return string? message refusal reason when serial is nil
+function weapons.register(data)
+    if type(data) ~= 'table' then return nil, 'No firearm given' end
+
+    local serial = serialOf(data.serial)
+    if not serial then
+        if data.requireSerial then return nil, 'A serial number is required' end
+        serial = weapons.newSerial()
+        if not serial then return nil, 'Could not issue a serial number' end
+    end
+
+    local name = util.limitedString(data.name, MAX_NAME)
+    if not name then return nil, 'Name the firearm' end
+
+    local class = util.limitedString(data.class, 16) or 'other'
+    if not CLASSES[class] then return nil, 'Pick a valid firearm class' end
+
+    local owner, ownerName, refusal = ownerFrom(data.owner)
+    if refusal then return nil, refusal end
+
+    local notes = util.limitedString(data.notes, MAX_NOTES) or ''
+    local by = util.limitedString(data.registeredBy, MAX_CID)
+
+    if MySQL.scalar.await('SELECT 1 FROM phone_mdt_weapons WHERE serial = ? LIMIT 1', { serial }) then
+        return nil, 'That serial is already on the registry'
+    end
+
+    local now = os.time()
+    MySQL.query.await([[
+        INSERT INTO phone_mdt_weapons
+            (serial, `name`, class, owner, owner_name, status, bolo, ballistics, notes,
+             registered_by, registered_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'registered', 0, 0, ?, ?, ?, ?)
+    ]], { serial, name, class, owner, ownerName, notes, by, now, now })
+
+    return serial
+end
+
+---One registry record by serial, for a caller outside the terminal.
+---@param serial string
+---@return table|nil weapon
+function weapons.find(serial)
+    local key = serialOf(serial)
+    return key and readOne(key) or nil
+end
+
+---Every firearm registered to a citizen, newest first.
+---@param citizenid string
+---@return table[] weapons
+function weapons.byOwner(citizenid)
+    local cid = util.limitedString(citizenid, MAX_CID)
+    if not cid then return {} end
+    local rows = MySQL.query.await(
+        'SELECT * FROM phone_mdt_weapons WHERE owner = ? ORDER BY registered_at DESC', { cid }) or {}
+    local names = namesIn(rows)
+    local out = {}
+    for i = 1, #rows do out[i] = rowOf(rows[i], names) end
+    return out
+end
+
+---Moves a firearm to another registry state, for the script that seized or destroyed it.
+---@param serial string
+---@param status string one of the WeaponStatus values
+---@param byCitizenid? string who to record as having changed it
+---@return boolean ok
+---@return string? message refusal reason
+function weapons.setStatus(serial, status, byCitizenid)
+    local key = serialOf(serial)
+    if not key then return false, 'No serial number given' end
+
+    local state = util.limitedString(status, 16)
+    if not state or not STATUSES[state] then return false, 'Not a registry status' end
+
+    local affected = MySQL.update.await(
+        'UPDATE phone_mdt_weapons SET status = ?, updated_by = ?, updated_at = ? WHERE serial = ?',
+        { state, util.limitedString(byCitizenid, MAX_CID), os.time(), key })
+    if not affected or affected < 1 then return false, 'No firearm on file under that serial' end
+    return true
+end
 ---The registry page, filtered by status and searched across serial, firearm and owner. A term
 ---shorter than MIN_QUERY is treated as no term at all rather than as a match on everything.
 weapons.search = access.gated('weapons.view', function(_, payload)
@@ -231,30 +340,16 @@ end)
 ---Files a new firearm. The serial is the primary key, so a duplicate is refused rather than
 ---silently overwriting whatever the registry already holds against it.
 weapons.create = access.audited('weapons.edit', function(_, payload, me)
-    local serial = serialOf(payload.serial)
-    if not serial then return util.fail('A serial number is required') end
-
-    local name = util.limitedString(payload.name, MAX_NAME)
-    if not name then return util.fail('Name the firearm') end
-
-    local class = util.limitedString(payload.class, 16) or 'other'
-    if not CLASSES[class] then return util.fail('Pick a valid firearm class') end
-
-    local owner, ownerName, refusal = ownerFrom(payload.owner)
-    if refusal then return util.fail(refusal) end
-
-    local notes = util.limitedString(payload.notes, MAX_NOTES) or ''
-
-    local taken = MySQL.scalar.await('SELECT 1 FROM phone_mdt_weapons WHERE serial = ? LIMIT 1', { serial })
-    if taken then return util.fail('That serial is already on the registry') end
-
-    local now = os.time()
-    MySQL.query.await([[
-        INSERT INTO phone_mdt_weapons
-            (serial, `name`, class, owner, owner_name, status, bolo, ballistics, notes,
-             registered_by, registered_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'registered', 0, 0, ?, ?, ?, ?)
-    ]], { serial, name, class, owner, ownerName, notes, me.citizenid, now, now })
+    local serial, refusal = weapons.register({
+        serial        = payload.serial,
+        name          = payload.name,
+        class         = payload.class,
+        owner         = payload.owner,
+        notes         = payload.notes,
+        registeredBy  = me.citizenid,
+        requireSerial = true,
+    })
+    if not serial then return util.fail(refusal) end
 
     local weapon = readOne(serial)
     if not weapon then return util.fail('That could not be registered') end
@@ -262,7 +357,7 @@ weapons.create = access.audited('weapons.edit', function(_, payload, me)
     return util.ok({ weapon = weapon }), {
         entityType = 'weapon',
         entityId   = serial,
-        details    = { name = name, class = class, owner = owner },
+        details    = { name = weapon.name, class = weapon.class, owner = weapon.owner },
     }
 end)
 

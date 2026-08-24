@@ -26,6 +26,19 @@ end
 ---@type boolean True while the local mic is muted for the active call.
 local micMuted = false
 
+---@type boolean True from the moment a call starts ringing out until it ends.
+local callLive = false
+
+---Tells the shell whether a call is live, so the held pose survives the phone being put away.
+---Only ever announced on a change: the pose refresh it drives also re-broadcasts the prop
+---statebag, which is not worth doing on every roster or connect push.
+---@param on boolean
+local function setCallLive(on)
+    if callLive == on then return end
+    callLive = on
+    TriggerEvent('sd-phone:client:callPose', on)
+end
+
 ---Mutes/unmutes the local mic entirely (call AND proximity), through whichever voice script is
 ---running. A backend with no mute (SaltyChat) leaves the flag alone, so the phone never reports
 ---itself muted when nothing was actually silenced.
@@ -84,10 +97,12 @@ end)
 -- Call-lifecycle relays: outgoing ring-back, connect, and end push straight into the React
 -- overlay.
 RegisterNetEvent('sd-phone:client:call:outgoing', function(data)
+    setCallLive(true)
     pushCall('sd-phone:call:outgoing', data)
 end)
 
 RegisterNetEvent('sd-phone:client:call:connected', function(data)
+    setCallLive(true)
     pushCall('sd-phone:call:connected', data)
 end)
 
@@ -95,6 +110,7 @@ RegisterNetEvent('sd-phone:client:call:ended', function(data)
     -- Push first: the mic reset reaches into the voice script, and anything it raises must not
     -- take the end of the call down with it.
     pushCall('sd-phone:call:ended', data)
+    setCallLive(false)
     if micMuted then pcall(setMicMuted, false) end
 end)
 
