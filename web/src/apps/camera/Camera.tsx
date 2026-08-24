@@ -100,7 +100,10 @@ interface Photo {
 
 const MODE_OPTIONS = ['VIDEO', 'PHOTO', 'LANDSCAPE'] as const;
 
-const CAPTURE_TIMEOUT_MS = 8000;
+// Reines Sicherheitsnetz: im Normalfall loest 'photos:added' oder 'photos:uploadFailed' die
+// Sperre. Der Wert muss ueber der schlechtesten Uebertragungszeit liegen, sonst gibt die Kamera
+// den Ausloeser frei, waehrend das vorige Bild noch laeuft - genau daran scheiterte das zweite Foto.
+const CAPTURE_TIMEOUT_MS = 30000;
 const VIDEO_TIMEOUT_MS   = 45000;
 
 const MAX_REC_MS         = 60000;
@@ -359,6 +362,13 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
     }, []);
+
+    // Fehlgeschlagener Upload: Sperre sofort loesen, statt den Spieler bis zum Timeout warten
+    // zu lassen. Die Meldung selbst zeigt der Client ueber die Notify-Bruecke an.
+    useNuiEvent('sd-phone:photos:uploadFailed', useCallback(() => {
+        setPending(false);
+        if (captureTimer.current) { clearTimeout(captureTimer.current); captureTimer.current = null; }
+    }, []));
 
     useNuiEvent('sd-phone:photos:added', useCallback((photo) => {
         if (!photo || typeof photo !== 'object') return;

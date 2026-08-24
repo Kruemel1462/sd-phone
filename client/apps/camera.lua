@@ -272,15 +272,78 @@ RegisterNUICallback('sd-phone:camera:close', function(_, cb)
     cb({ success = true })
 end)
 
--- Shutter relay: captured media arrives as a base64 data-URL and is forwarded to the server
--- over a latent event.
----@type integer Latent-event throttle for photos (bytes/sec).
-local PHOTO_BPS <const> = 256 * 1024
----@type integer Latent-event throttle for videos (bytes/sec).
-local VIDEO_BPS <const> = 2 * 1024 * 1024
+-- Shutter relay: die Aufnahme kommt als base64-Daten-URL herein und wird in Stuecken an den
+-- Server geschickt.
+--
+-- Hier stand TriggerLatentServerEvent, und daran lag es, dass nach dem ERSTEN Foto nichts mehr
+-- ankam. Gemessen: das erste Bild lief sauber bis zum CDN durch, beim zweiten fehlte im Serverlog
+-- selbst die Eingangszeile - die VOR jeder Pruefung steht. Der Client ruft also, der Server
+-- bekommt nichts. Warum der Latent-Kanal nach einer abgeschlossenen Uebertragung stumm bleibt,
+-- ist nicht geklaert; die Native ist dazu nicht dokumentiert, und ohne einen Fehler auf einer der
+-- beiden Seiten gibt es nichts, woran man es festmachen koennte.
+--
+-- Gewoehnliche Events haben dieses Verhalten nicht: sie gehen raus oder erzeugen einen Fehler.
+-- Dafuer sind sie in der Groesse begrenzt, also wird die Aufnahme hier selbst gestueckelt und
+-- serverseitig wieder zusammengesetzt (server/photos/init.lua).
+---@type integer Nutzlast je Ereignis. Deutlich unter der Grenze fuer ein einzelnes Client-Event,
+---damit Ereignisname und msgpack-Rahmen bequem daneben passen.
+local CHUNK_BYTES <const> = 16 * 1024
+---@type integer Pause zwischen zwei Ereignissen (ms). Rund 33 Ereignisse und 530 KB je Sekunde -
+---ein Foto ist damit in etwa einer Viertelsekunde drueben, und der Ereigniszaehler des Servers,
+---der einen Client bei zu vielen Ereignissen abwirft, bleibt weit unterschritten.
+local CHUNK_DELAY <const> = 30
+
+---@type integer Laufende Nummer je Uebertragung. Der Server haengt Stuecke nur aneinander,
+---solange die Nummer dieselbe bleibt - eine neue Nummer verwirft eine haengengebliebene
+---Uebertragung, statt zwei Aufnahmen ineinander laufen zu lassen.
+local uploadSeq = 0
+---@type table[] Aufnahmen, die noch auf die Leitung muessen.
+local outbox = {}
+---@type integer Wie viele Aufnahmen hier hoechstens warten duerfen. Deckt sich mit dem Deckel der
+---Serverwarteschlange; im Normalbetrieb liegt nie mehr als eine hier, weil die Kamera ihren
+---Ausloeser bis zur Antwort des Servers gesperrt haelt.
+local MAX_OUTBOX <const> = 6
+---@type boolean True solange der Sende-Thread laeuft.
+local sending = false
+
+---Schickt die Warteschlange Stueck fuer Stueck raus, eine Aufnahme nach der anderen. Laeuft immer
+---nur einmal; ein zweiter Aufruf ueberlaesst der laufenden Schleife die neuen Eintraege.
+local function pumpOutbox()
+    if sending then return end
+    sending = true
+    CreateThread(function()
+        while true do
+            local job = table.remove(outbox, 1)
+            if not job then break end
+
+            uploadSeq = uploadSeq + 1
+            local seq   = uploadSeq
+            local image = job.image
+            local total = math.ceil(#image / CHUNK_BYTES)
+
+            for i = 1, total do
+                local from = (i - 1) * CHUNK_BYTES + 1
+                TriggerServerEvent('sd-phone:server:photos:uploadChunk', {
+                    seq   = seq,
+                    index = i,
+                    total = total,
+                    kind  = job.kind,
+                    data  = image:sub(from, from + CHUNK_BYTES - 1),
+                })
+                Wait(CHUNK_DELAY)
+            end
+        end
+        sending = false
+    end)
+end
 
 ---React -> Lua: shutter pressed - relays the captured media to the server. The image must be a
 ---non-empty string and the kind is coerced onto the photo/video whitelist.
+---
+---Die NUI wird als Erstes bedient und erst danach gesendet. Andersherum haengt die Kamera
+---endlos, wenn am Senden etwas schiefgeht: takeShot() in web/src/apps/camera/Camera.tsx setzt
+---seine Sicherheitsfrist erst, NACHDEM diese Antwort da ist - bleibt sie aus, laeuft nie ein
+---Timeout, und der Ausloeser bleibt fuer immer gesperrt. Genau so sah der Fehler aus.
 RegisterNUICallback('sd-phone:camera:capture', function(data, cb)
     local image = data and data.image
     if type(image) ~= 'string' or image == '' then
@@ -289,10 +352,16 @@ RegisterNUICallback('sd-phone:camera:capture', function(data, cb)
     end
 
     local kind = (data and data.kind == 'video') and 'video' or 'photo'
-    local bps  = kind == 'video' and VIDEO_BPS or PHOTO_BPS
 
-    TriggerLatentServerEvent('sd-phone:server:photos:upload', bps, image, kind)
+    if #outbox >= MAX_OUTBOX then
+        cb({ success = false, error = 'busy' })
+        return
+    end
+
     cb({ success = true })
+
+    outbox[#outbox + 1] = { image = image, kind = kind }
+    pumpOutbox()
 end)
 
 ---Resource-stop cleanup: stops the flash and exits the cell-cam view.

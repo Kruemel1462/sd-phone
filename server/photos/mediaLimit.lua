@@ -21,14 +21,18 @@ local buckets = {}
 ---A missing / empty cid is not blocked (server-side exports, unidentified callers).
 ---@param cid string|nil citizenid
 ---@param bytes any size of the upload being attempted
+---@param skipCooldown? boolean Mindestabstand ueberspringen. Nur fuer Pfade, die ohnehin
+---serialisieren: die Foto-Warteschlange arbeitet ohne Ueberschneidung ab, dort waere der
+---Abstand nur eine zweite Sperre, die genau das verwirft, was die Schlange auffangen soll.
+---Das Byte-Budget bleibt in jedem Fall aktiv - es ist die eigentliche Missbrauchsgrenze.
 ---@return boolean ok true when the upload may proceed
 ---@return string? reason 'cooldown' | 'budget' when blocked
-function mediaLimit.check(cid, bytes)
+function mediaLimit.check(cid, bytes, skipCooldown)
     if type(cid) ~= 'string' or cid == '' then return true end
     bytes = tonumber(bytes) or 0
     local now = GetGameTimer()
     local b = buckets[cid]
-    if b and now - b.last < COOLDOWN_MS then return false, 'cooldown' end
+    if not skipCooldown and b and now - b.last < COOLDOWN_MS then return false, 'cooldown' end
     b = b or { last = 0, events = {} }
     buckets[cid] = b
 

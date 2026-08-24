@@ -330,6 +330,7 @@ export type NuiMessage =
     | { action: 'sd-phone:camera:lock';           data: { on: boolean } }
     | { action: 'sd-phone:camera:faceCam';        data: { on: boolean } }
     | { action: 'sd-phone:photos:added';          data: { id: string; url: string; createdAt: string } }
+    | { action: 'sd-phone:photos:uploadFailed';   data: string }
     | { action: 'sd-phone:groups:inviteReceived'; data: GroupInvitePush }
     | { action: 'sd-phone:groups:memberJoined';   data: GroupRosterPush }
     | { action: 'sd-phone:groups:memberLeft';     data: GroupRosterPush }
