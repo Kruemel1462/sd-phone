@@ -1432,6 +1432,33 @@ function store.getStreamerMode(citizenid)
     return row ~= nil and (row.streamer_mode == true or tonumber(row.streamer_mode) == 1)
 end
 
+---@type table<number, boolean> source -> aktueller Streamer-Mode-Stand, rein im Speicher.
+---
+---Andere Systeme (z.B. der Phone-Speaker in server/music/init.lua), die bei JEDEM Ereignis fuer
+---JEDEN Online-Spieler wissen muessen "hat der gerade Streamer Mode an", koennen sich dafuer
+---keinen SELECT je Spieler je Ereignis leisten - ein Lautstaerkeregler, der waehrend des Ziehens
+---mehrmals pro Sekunde feuert, wuerde das sofort spuerbar machen. Diese Tabelle ist der billige
+---Weg dahin: init.lua haelt sie ueber cacheStreamerMode aktuell (beim Laden der Einstellungen und
+---bei jeder Aenderung), Leser fragen nur noch eine Lua-Tabelle ab.
+local streamerModeCache = {}
+
+---@param source number
+---@param on boolean
+function store.cacheStreamerMode(source, on)
+    streamerModeCache[source] = on == true
+end
+
+---@param source number
+---@return boolean
+function store.isStreamerMode(source)
+    return streamerModeCache[source] == true
+end
+
+---@param source number
+function store.clearStreamerModeCache(source)
+    streamerModeCache[source] = nil
+end
+
 ---@type table<string, true> The categories Streamer Mode can hide. A key absent from a stored
 ---config means "hide it": the master switch is opt-out per category, so a config written by an
 ---older client keeps hiding anything it did not know about rather than silently exposing it.

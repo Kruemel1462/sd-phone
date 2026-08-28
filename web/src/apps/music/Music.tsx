@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     Check, ChevronLeft, ChevronRight, FastForward, ImagePlus,
     ListMusic, Mic, Minus, Music2, Pause, Pencil, Play, Plus, Repeat,
-    Rewind, Search, SearchX, Share, Shuffle, Trash2, Volume1, Volume2, X,
+    Rewind, Search, SearchX, Share, Shuffle, Speaker, Trash2, Volume1, Volume2, X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -895,6 +895,20 @@ function NowPlaying({ onClose }: { onClose: () => void }) {
                 <Volume1 className="h-[18px] w-[18px] shrink-0 text-white/55" />
                 <div className="flex-1"><Scrubber thick value={m.volume * 100} max={100} onSeek={v => m.setVolume(v / 100)} /></div>
                 <Volume2 className="h-[18px] w-[18px] shrink-0 text-white/55" />
+            </div>
+
+            <div className="mt-5 flex shrink-0 items-center justify-center">
+                <button
+                    onClick={() => m.setSpeakerOn(!m.speakerOn)}
+                    aria-label={t('music.speaker', 'Speaker')}
+                    className="flex items-center gap-2 rounded-full px-4 py-2 active:opacity-70"
+                    style={{ background: m.speakerOn ? 'rgba(255,255,255,0.22)' : 'transparent' }}
+                >
+                    <Speaker className="h-[19px] w-[19px]" style={{ color: m.speakerOn ? '#fff' : 'rgba(255,255,255,0.5)' }} strokeWidth={2.2} />
+                    <span className="text-[13px] font-semibold" style={{ color: m.speakerOn ? '#fff' : 'rgba(255,255,255,0.5)' }}>
+                        {m.speakerOn ? t('music.speakerOn', 'Speaker On') : t('music.speaker', 'Speaker')}
+                    </span>
+                </button>
             </div>
         </div>
     );

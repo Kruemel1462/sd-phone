@@ -2,6 +2,9 @@
 local share = require 'server.share.core'
 ---@type table Shared server helpers (server.util): field-length caps for the share payload.
 local util  = require 'server.util'
+---@type table Settings persistence layer (server.settings.store): the Streamer Mode cache the
+---Phone speaker relay reads before sending anyone a broadcast.
+local settingsStore = require 'server.settings.store'
 
 ---@type integer Tracks carried by one shared playlist. A hand-built library playlist is a few
 ---dozen songs, so this only stops a scripted array.
@@ -82,6 +85,81 @@ lib.callback.register('sd-phone:server:music:share', function(src, payload)
 
     local ok, message = share.request(src, payload.target, payload.kind, built)
     return { success = ok == true, message = message }
+end)
+
+-- ── Phone speaker ────────────────────────────────────────────────────────────────────────────
+-- Broadcasts the Music app's current track to nearby players over xsound (client/apps/music.lua
+-- renders it; xsound itself is optional and never required here). This layer only relays who is
+-- broadcasting what - position, distance falloff and the actual sound are entirely the listening
+-- client's job, resolved from the broadcaster's own networked ped exactly like xsound's own
+-- crewphone addon does it.
+
+---@type table<number, true> Server ids currently broadcasting, so a late "stop" or a disconnect
+---for a player who was never broadcasting is a no-op instead of a spurious relay.
+local speakers = {}
+
+---@param volume any raw client value, clamped to a sane 0-1
+---@return number
+local function clampVolume(volume)
+    volume = tonumber(volume) or 1.0
+    if volume < 0.0 then return 0.0 end
+    if volume > 1.0 then return 1.0 end
+    return volume
+end
+
+---Sends a Phone-speaker event to every player except those with Streamer Mode on. Their client
+---never even learns a broadcast started, so a music match can never end up on their stream and
+---risk a copyright claim over a song they never chose to play. Cheap: an in-memory cache lookup
+---per online player, not a database read - see store.isStreamerMode.
+---@param event string
+---@param ... any
+local function relayToListeners(event, ...)
+    for _, playerId in ipairs(GetPlayers()) do
+        local dst = tonumber(playerId)
+        if dst and not settingsStore.isStreamerMode(dst) then
+            TriggerClientEvent(event, dst, ...)
+        end
+    end
+end
+
+---Starts, or retargets to a new track, a player's phone-speaker broadcast.
+---@param payload { url: string, volume?: number }
+RegisterNetEvent('sd-phone:server:music:speaker:start', function(payload)
+    local src = source
+    if type(payload) ~= 'table' then return end
+    local url = util.limitedString(payload.url, 512)
+    if not url then return end
+    speakers[src] = true
+    relayToListeners('sd-phone:client:music:speaker:start', src, url, clampVolume(payload.volume))
+end)
+
+RegisterNetEvent('sd-phone:server:music:speaker:stop', function()
+    local src = source
+    if not speakers[src] then return end
+    speakers[src] = nil
+    relayToListeners('sd-phone:client:music:speaker:stop', src)
+end)
+
+---@param playing boolean
+RegisterNetEvent('sd-phone:server:music:speaker:playstate', function(playing)
+    local src = source
+    if not speakers[src] then return end
+    relayToListeners('sd-phone:client:music:speaker:playstate', src, playing == true)
+end)
+
+---Mirrors the Music app's own volume slider onto an already-live broadcast.
+---@param volume number
+RegisterNetEvent('sd-phone:server:music:speaker:volume', function(volume)
+    local src = source
+    if not speakers[src] then return end
+    relayToListeners('sd-phone:client:music:speaker:volume', src, clampVolume(volume))
+end)
+
+AddEventHandler('playerDropped', function()
+    local src = source
+    if not speakers[src] then return end
+    speakers[src] = nil
+    TriggerClientEvent('sd-phone:client:music:speaker:stop', -1, src)
 end)
 
 ---Gives a track straight to a player's music library (exports['sd-phone']:giveTrack), skipping

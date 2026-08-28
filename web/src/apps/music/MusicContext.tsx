@@ -36,6 +36,7 @@ interface MusicCtx {
     volume:   number;
     shuffle:  boolean;
     repeat:   boolean;
+    speakerOn: boolean;
     play:      (track: Track, queue?: Track[]) => void;
     stop:      () => void;
     toggle:    () => void;
@@ -45,6 +46,7 @@ interface MusicCtx {
     setVolume: (v: number) => void;
     setShuffle: (v: boolean) => void;
     setRepeat:  (v: boolean) => void;
+    setSpeakerOn: (v: boolean) => void;
     requestOpen: () => void;
     openSignal:  number;
 }
@@ -88,6 +90,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const [shuffle, setShuffle]   = useState(false);
     const [repeat, setRepeat]     = useState(false);
     const [openSignal, setOpenSignal] = useState(0);
+    const [speakerOn, setSpeakerOnState] = useState(false);
+    const speakerOnRef = useRef(false);
     const [volume, setVolumeState] = useState(() => {
         const v = Number(window.localStorage.getItem('sd-phone:music:vol'));
         return isFinite(v) && v > 0 ? Math.min(1, v) : 1;
@@ -272,6 +276,40 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const setVolume = useCallback((v: number) => setVolumeState(Math.max(0, Math.min(1, v))), []);
     const requestOpen = useCallback(() => setOpenSignal(n => n + 1), []);
 
+    // Phone speaker: broadcasts the built-in player's current track to nearby players over
+    // xsound (client/apps/music.lua). Lives here, not in the Now Playing sheet, so closing that
+    // sheet doesn't silently cut a broadcast still running for everyone else.
+    const setSpeakerOn = useCallback((on: boolean) => {
+        setSpeakerOnState(on);
+        speakerOnRef.current = on;
+        if (on && current) void fetchNui('sd-phone:music:speaker:start', { url: current.url, volume: volumeRef.current });
+        else void fetchNui('sd-phone:music:speaker:stop', {});
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [current]);
+    // Retargets a live broadcast when the track changes (next/prev/queue advance) - the toggle
+    // above only fires on the user's own click, not on every track change.
+    useEffect(() => {
+        if (speakerOnRef.current && current) void fetchNui('sd-phone:music:speaker:start', { url: current.url, volume: volumeRef.current });
+
+    }, [current?.id]);
+    // Nothing left to broadcast once playback stops entirely.
+    useEffect(() => {
+        if (!current && speakerOnRef.current) {
+            speakerOnRef.current = false;
+            setSpeakerOnState(false);
+            void fetchNui('sd-phone:music:speaker:stop', {});
+        }
+    }, [current]);
+    useEffect(() => {
+        if (speakerOnRef.current) void fetchNui('sd-phone:music:speaker:playstate', { playing });
+    }, [playing]);
+    // The volume slider is the broadcaster's own phone speaker - if a listener hears it at a flat
+    // level regardless of this, turning it down on the broadcaster's end would do nothing for
+    // anyone else, which reads as broken rather than a speaker anyone can hear.
+    useEffect(() => {
+        if (speakerOnRef.current) void fetchNui('sd-phone:music:speaker:volume', { volume });
+    }, [volume]);
+
     handlers.current.ended = () => {
         if (repeat) { wantPlay.current = true; seek(0); setPlaying(true); }
         else next();
@@ -293,15 +331,15 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const value = useMemo<MusicCtx>(() => ({
         current: extAppId ? externalTrack : current,
         playing: extAppId ? extPlaying : playing,
-        volume, shuffle, repeat,
+        volume, shuffle, repeat, speakerOn,
         play, stop,
         toggle: exposedToggle, next: exposedNext, prev: exposedPrev, seek: exposedSeek,
-        setVolume, setShuffle, setRepeat,
+        setVolume, setShuffle, setRepeat, setSpeakerOn,
         requestOpen, openSignal,
     }), [
-        extAppId, extPlaying, externalTrack, current, playing, volume, shuffle, repeat,
+        extAppId, extPlaying, externalTrack, current, playing, volume, shuffle, repeat, speakerOn,
         play, stop, exposedToggle, exposedNext, exposedPrev, exposedSeek,
-        setVolume, setShuffle, setRepeat,
+        setVolume, setShuffle, setRepeat, setSpeakerOn,
         requestOpen, openSignal,
     ]);
 

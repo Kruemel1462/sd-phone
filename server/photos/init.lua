@@ -184,12 +184,14 @@ end
 -- kam sie ueber ein Latent Event, und das blieb nach der ersten Uebertragung stumm: das zweite
 -- Foto erreichte den Server nie, im Log fehlte selbst die Eingangszeile. Gewoehnliche Events
 -- zeigen dieses Verhalten nicht, dafuer eine Groessengrenze - daher die Stuecke.
----@type integer Groesstes zulaessiges Stueck. Der Client schickt 16 KB; die Reserve faengt
+---@type integer Groesstes zulaessiges Stueck. Der Client schickt 8 KB (siehe CHUNK_BYTES in
+---client/apps/camera.lua - dort auch, warum es nicht mehr sein darf); die Reserve faengt
 ---Rundungen ab, ohne ein Scheunentor zu sein.
 local MAX_CHUNK_BYTES <const> = 32 * 1024
----@type integer Meiste Stuecke je Uebertragung. 32 MB Video bei 16 KB sind 2048 - der Deckel
----liegt darueber, die eigentliche Grenze ist der Byte-Zaehler unten.
-local MAX_CHUNKS <const> = 4096
+---@type integer Meiste Stuecke je Uebertragung. 64 MB Video bei 8 KB sind 8192 - der Deckel
+---liegt darueber, die eigentliche Grenze ist der Byte-Zaehler unten. War 4096 bei 16 KB
+---Stuecken (also derselbe 64-MB-Rahmen); verdoppelt, als CHUNK_BYTES halbiert wurde.
+local MAX_CHUNKS <const> = 8192
 ---@type integer Nach so langer Stille gilt eine Uebertragung als abgebrochen (ms). Ein Spieler,
 ---dessen Verbindung mitten in einer Aufnahme wegbricht, haelt den Speicher damit nicht dauerhaft.
 local TRANSFER_IDLE_MS <const> = 30000

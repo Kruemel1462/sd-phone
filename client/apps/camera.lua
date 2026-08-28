@@ -285,13 +285,32 @@ end)
 -- Gewoehnliche Events haben dieses Verhalten nicht: sie gehen raus oder erzeugen einen Fehler.
 -- Dafuer sind sie in der Groesse begrenzt, also wird die Aufnahme hier selbst gestueckelt und
 -- serverseitig wieder zusammengesetzt (server/photos/init.lua).
----@type integer Nutzlast je Ereignis. Deutlich unter der Grenze fuer ein einzelnes Client-Event,
----damit Ereignisname und msgpack-Rahmen bequem daneben passen.
-local CHUNK_BYTES <const> = 16 * 1024
----@type integer Pause zwischen zwei Ereignissen (ms). Rund 33 Ereignisse und 530 KB je Sekunde -
----ein Foto ist damit in etwa einer Viertelsekunde drueben, und der Ereigniszaehler des Servers,
+---@type integer Nutzlast je Ereignis.
+---
+---War 16 KB und kickte bei Videos zuverlaessig mit "Reliable network event size overflow:
+---sd-phone:server:photos:uploadChunk" - dem harten Limit fuer die Groesse EINES einzelnen
+---Client-Events, nicht der weiter unten behandelten Rate ueber Zeit. 16 KB roher String plus
+---msgpack-Rahmen (Tabelle mit seq/index/total/kind/data, dazu der Eventname) liegt schon nah an
+---der Grenze - bei einem Video braucht `total`/`index` durch die hohen Werte (700+ Stuecke) ein
+---paar Byte mehr in msgpack als bei einem Foto mit nur einer Handvoll Stuecke, und genau das hat
+---anscheinend den Ausschlag gegeben. Halbiert, mit ordentlich Luft nach oben.
+local CHUNK_BYTES <const> = 8 * 1024
+---@type integer Pause zwischen zwei Ereignissen (ms). Rund 33 Ereignisse und 265 KB je Sekunde -
+---ein Foto ist damit in einer guten halben Sekunde drueben, und der Ereigniszaehler des Servers,
 ---der einen Client bei zu vielen Ereignissen abwirft, bleibt weit unterschritten.
 local CHUNK_DELAY <const> = 30
+---@type integer Alle so viele Stuecke eine laengere Pause einlegen (nur relevant fuer lange
+---Uebertragungen). Ein Foto bleibt darunter und ist nie betroffen.
+local BREATHER_EVERY <const> = 24
+---@type integer Laenge dieser laengeren Pause (ms).
+---
+---Ein Video (bis zu 60s bei 1.2 Mbps + Ton) zerfaellt in 700-800 Stuecke - am Stueck gesendet
+---laeuft das 25+ Sekunden ununterbrochen ueber den reliable-Kanal. Wait(CHUNK_DELAY) bremst nur
+---das Absenden, nie das Bestaetigen: bleibt die Engine mit dem Verarbeiten/Bestaetigen dahinter
+---zurueck, waechst der unbestaetigte Rest immer weiter, bis der Client wegen "reliable network
+---overflow" geworfen wird. Eine Vollpause alle paar Stuecke gibt dem Kanal die Chance, tatsaechlich
+---leerzulaufen, statt nur zwischen den Sends zu warten.
+local BREATHER_MS <const> = 250
 
 ---@type integer Laufende Nummer je Uebertragung. Der Server haengt Stuecke nur aneinander,
 ---solange die Nummer dieselbe bleibt - eine neue Nummer verwirft eine haengengebliebene
@@ -331,6 +350,10 @@ local function pumpOutbox()
                     data  = image:sub(from, from + CHUNK_BYTES - 1),
                 })
                 Wait(CHUNK_DELAY)
+
+                if i % BREATHER_EVERY == 0 and i < total then
+                    Wait(BREATHER_MS)
+                end
             end
         end
         sending = false

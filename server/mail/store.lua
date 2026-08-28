@@ -177,6 +177,12 @@ function store.ensureSchema()
     })
     util.ensureIndex('phone_mail_accounts', 'idx_phone_mail_accounts_creator', '(created_by_cid)')
 
+    -- Older installs of this table used a `password` column before it was renamed to
+    -- `password_hash`; ensureColumns above only adds the new column, it never drops the old one.
+    -- Left NOT NULL with no default, it rejects every INSERT here (which only ever writes
+    -- `password_hash`) with "Field 'password' doesn't have a default value".
+    util.relaxForeignColumn('phone_mail_accounts', 'password')
+
     -- Index over logged_in_citizens: JSON_SEARCH cannot use one, so every badge snapshot scanned
     -- the whole accounts table and decoded each match's messages blob. The collation has to match
     -- first: joining two IMPLICIT collations is a hard "illegal mix of collations" error, not a
@@ -240,12 +246,15 @@ end
 ---@param createdByCid string|nil creator citizenid, stamped so a lifetime cap can count them
 ---@return boolean
 function store.insertAccount(email, passwordHash, displayName, createdByCid)
-    local ok = pcall(function()
+    local ok, err = pcall(function()
         MySQL.insert.await([[
             INSERT INTO phone_mail_accounts (email, password_hash, display_name, messages, logged_in_citizens, created_by_cid)
             VALUES (?, ?, ?, '[]', '[]', ?)
         ]], { email, passwordHash, displayName, createdByCid })
     end)
+    if not ok then
+        print(('^1[sd-phone:mail]^0 insertAccount(%s) failed: %s'):format(email, err))
+    end
     return ok
 end
 

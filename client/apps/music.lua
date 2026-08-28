@@ -68,6 +68,130 @@ RegisterNUICallback('sd-phone:nowPlaying:action', function(data, cb)
     cb('ok')
 end)
 
+-- ── Phone speaker ────────────────────────────────────────────────────────────────────────────
+-- The Music app's speaker toggle: broadcasts the current track over xsound so nearby players
+-- hear it too, positioned on the broadcaster's own ped. xsound is optional - every entry point
+-- here is a no-op if it isn't running.
+---@type number Metres before a listener stops hearing a broadcast.
+local SPEAKER_DISTANCE <const> = 20.0
+---@type number Volume xsound plays a broadcast at for a listener.
+local SPEAKER_VOLUME <const> = 0.35
+
+---@param volume any raw NUI value, clamped to a sane 0-1
+---@return number
+local function clampVolume(volume)
+    volume = tonumber(volume) or 1.0
+    if volume < 0.0 then return 0.0 end
+    if volume > 1.0 then return 1.0 end
+    return volume
+end
+
+---@param payload { url?: string, volume?: number }
+RegisterNUICallback('sd-phone:music:speaker:start', function(payload, cb)
+    local url = payload and payload.url
+    if GetResourceState('xsound') ~= 'started' or type(url) ~= 'string' or url == '' then
+        cb({ success = false })
+        return
+    end
+    TriggerServerEvent('sd-phone:server:music:speaker:start', { url = url, volume = clampVolume(payload.volume) })
+    cb({ success = true })
+end)
+
+RegisterNUICallback('sd-phone:music:speaker:stop', function(_, cb)
+    TriggerServerEvent('sd-phone:server:music:speaker:stop')
+    cb('ok')
+end)
+
+---@param payload { playing?: boolean }
+RegisterNUICallback('sd-phone:music:speaker:playstate', function(payload, cb)
+    TriggerServerEvent('sd-phone:server:music:speaker:playstate', payload and payload.playing == true)
+    cb('ok')
+end)
+
+---Mirrors the Music app's own volume slider onto the broadcast - it's the broadcaster's phone
+---speaker, so turning it down should turn it down for everyone hearing it too.
+---@param payload { volume?: number }
+RegisterNUICallback('sd-phone:music:speaker:volume', function(payload, cb)
+    TriggerServerEvent('sd-phone:server:music:speaker:volume', clampVolume(payload and payload.volume))
+    cb('ok')
+end)
+
+-- Listening side: every other player's active broadcast, keyed by their server id as a string -
+-- that string doubles as the xsound sound name.
+---@type table<string, boolean>
+local speakers = {}
+
+---@param serverId number
+---@param url string
+---@param volume number 0-1, the broadcaster's own Music app volume slider
+RegisterNetEvent('sd-phone:client:music:speaker:start', function(serverId, url, volume)
+    if serverId == GetPlayerServerId(PlayerId()) then return end
+    if GetResourceState('xsound') ~= 'started' then return end
+
+    local name = tostring(serverId)
+    local target = GetPlayerFromServerId(serverId)
+    local ped = target ~= -1 and GetPlayerPed(target) or 0
+    local pos = ped ~= 0 and GetEntityCoords(ped) or vector3(0.0, 0.0, 0.0)
+
+    speakers[name] = true
+    exports.xsound:PlayUrlPos(name, url, (tonumber(volume) or 1.0) * SPEAKER_VOLUME, pos, false)
+    exports.xsound:Distance(name, SPEAKER_DISTANCE)
+end)
+
+---@param serverId number
+RegisterNetEvent('sd-phone:client:music:speaker:stop', function(serverId)
+    local name = tostring(serverId)
+    if not speakers[name] then return end
+    speakers[name] = nil
+    if GetResourceState('xsound') == 'started' then exports.xsound:Destroy(name) end
+end)
+
+---@param serverId number
+---@param playing boolean
+RegisterNetEvent('sd-phone:client:music:speaker:playstate', function(serverId, playing)
+    local name = tostring(serverId)
+    if not speakers[name] or GetResourceState('xsound') ~= 'started' then return end
+    if playing then exports.xsound:Resume(name) else exports.xsound:Pause(name) end
+end)
+
+---@param serverId number
+---@param volume number 0-1
+RegisterNetEvent('sd-phone:client:music:speaker:volume', function(serverId, volume)
+    local name = tostring(serverId)
+    if not speakers[name] or GetResourceState('xsound') ~= 'started' then return end
+    exports.xsound:setVolumeMax(name, (tonumber(volume) or 1.0) * SPEAKER_VOLUME)
+end)
+
+-- Fired when this player turns Streamer Mode on (server/settings/init.lua). From that moment the
+-- server stops sending this client any speaker events at all, which would otherwise leave a
+-- broadcast already playing stuck running forever - even its own "stop" would now be filtered.
+RegisterNetEvent('sd-phone:client:music:speaker:clearAll', function()
+    if GetResourceState('xsound') == 'started' then
+        for name in pairs(speakers) do exports.xsound:Destroy(name) end
+    end
+    speakers = {}
+end)
+
+-- Keeps every active broadcast anchored to its owner's live position, and drops one whose owner
+-- disconnected or fell out of scope before their own "stop" could arrive.
+CreateThread(function()
+    while true do
+        Wait(250)
+        for name in pairs(speakers) do
+            local serverId = tonumber(name)
+            local player = serverId and GetPlayerFromServerId(serverId)
+            if player and player ~= -1 then
+                if GetResourceState('xsound') == 'started' then
+                    exports.xsound:Position(name, GetEntityCoords(GetPlayerPed(player)))
+                end
+            else
+                speakers[name] = nil
+                if GetResourceState('xsound') == 'started' then exports.xsound:Destroy(name) end
+            end
+        end
+    end
+end)
+
 ---Server push: a song / playlist shared to us was accepted server-side. Hands it to the NUI
 ---and surfaces a notification.
 ---@param data table { kind: 'track'|'playlist', ... } from server/music/init.lua

@@ -173,8 +173,13 @@ lib.callback.register('sd-phone:server:settings:get', function(source, payload)
     -- Face Unlock only works for the SIM's first activator - a stolen phone still asks the
     -- thief for the passcode (a no-op outside unique-phones mode).
     data.faceId                  = data.faceId and require('server.sim.session').isOwner(source)
+    -- Seeds the in-memory Streamer Mode cache other systems read (store.isStreamerMode) - this
+    -- is the only point besides the toggle itself where the DB-backed value is known.
+    store.cacheStreamerMode(source, data.streamerMode)
     return { success = true, data = data }
 end)
+
+util.onCleanup(function(source) store.clearStreamerModeCache(source) end)
 
 ---Persists the caller's lock and/or home wallpaper key; an absent field leaves that screen
 ---unchanged.
@@ -412,7 +417,14 @@ lib.callback.register('sd-phone:server:settings:setStreamerMode', function(sourc
     if not cid then return { success = false, message = 'Player not found' } end
     if not writeAllowed(cid, 'streamerMode') then return BUSY end
     payload = type(payload) == 'table' and payload or {}
-    store.setStreamerMode(cid, payload.on == true)
+    local on = payload.on == true
+    store.setStreamerMode(cid, on)
+    store.cacheStreamerMode(source, on)
+    -- The Phone speaker relay (server/music/init.lua) only stops SENDING this client future
+    -- events from here on - it says nothing about a broadcast this client was already hearing
+    -- before the toggle. Told explicitly, so it doesn't keep playing (unstoppable, since the
+    -- next "stop" would now be filtered out too) until the broadcaster happens to do something.
+    if on then TriggerClientEvent('sd-phone:client:music:speaker:clearAll', source) end
     return { success = true }
 end)
 
