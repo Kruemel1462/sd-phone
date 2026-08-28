@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 
 import { t } from '@/i18n';
+import { useDeckActive } from '@/shell/deckActive';
 import { EmptyState } from '@/ui/EmptyState';
 import { VerifiedBadge } from './ui';
 import { isVideoUrl } from '@/core/photosApi';
@@ -183,23 +184,25 @@ function TopTab({ active, onClick, children }: { active: boolean; onClick: () =>
 
 function Media({ post, isActive }: { post: VPost; isActive: boolean }) {
     const videoRef = useRef<HTMLVideoElement>(null);
+    const deckActive = useDeckActive();
     const isVideo = isVideoUrl(post.video);
 
     useEffect(() => {
         const v = videoRef.current;
         if (!v) return;
-        if (isActive) {
+
+        if (isActive && deckActive) {
             v.muted = false;
             void v.play().catch(() => {
-                // Autoplay with sound blocked (browser dev) — retry muted.
                 v.muted = true;
                 void v.play().catch(() => {});
             });
-        } else {
-            v.pause();
-            v.currentTime = 0;
+            return;
         }
-    }, [isActive, post.video]);
+
+        v.pause();
+        if (!isActive) v.currentTime = 0;
+    }, [isActive, deckActive, post.video]);
 
     if (!isVideo) {
         return <img src={post.video} alt="" draggable={false} className="h-full w-full object-cover" />;

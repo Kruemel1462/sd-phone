@@ -289,6 +289,15 @@ lib.callback.register('sd-phone:server:settings:setHomeDensity', function(source
     return { success = true }
 end)
 
+---Persists the caller's home screen icon scale, the fine adjustment on top of the density preset.
+lib.callback.register('sd-phone:server:settings:setHomeIconScale', function(source, payload)
+    local cid = player.getIdentifier(source)
+    if not cid then return { success = false, message = 'Player not found' } end
+    payload = type(payload) == 'table' and payload or {}
+    coalesce(cid, 'homeIconScale', function() store.setHomeIconScale(cid, payload.scale, deviceOf(payload)) end)
+    return { success = true }
+end)
+
 ---Persists the caller's home screen app name overrides.
 lib.callback.register('sd-phone:server:settings:setAppLabels', function(source, payload)
     local cid = player.getIdentifier(source)

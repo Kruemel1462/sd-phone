@@ -11,6 +11,8 @@ import { demoAdminOnly } from '@/core/demo';
 import { PayphoneUI } from '@/payphone/PayphoneUI';
 import { RaceOverlay } from '@/apps/racing/hud/RaceOverlay';
 import { CallLayer } from '@/apps/phone/CallLayer';
+import { CallPeekBanner } from '@/apps/phone/CallPeekBanner';
+import { useCallRing } from '@/apps/phone/calls/useCallRing';
 import { NotificationHost, type NotificationItem } from '@/shell/Notifications';
 import { AirShareCard, type AirShareRequest } from '@/shared/AirShare';
 import { SignRequestLayer, type SignRequestData } from '@/apps/documents/SignRequestLayer';
@@ -19,7 +21,7 @@ import { NotificationCenter, NotificationCenterHotzone } from '@/shell/Notificat
 import { MusicProvider, useMusic } from '@/apps/music/MusicContext';
 import { LockscreenWidgetsProvider } from '@/shell/LockscreenWidgetsContext';
 import { CctvOverlay, useCctvActive } from '@/apps/mdt/CctvOverlay';
-import '@/apps/mdt/cameraPublisher';
+import { BodycamOverlay, useBodycamActive } from '@/apps/mdt/BodycamOverlay';
 import { ryDevDataHidden, ryDevToggleData } from '@/apps/ryde/data';
 import { asAppId, isPreviewApp, preloadAllApps, preloadApp, setPreloadPaused, type AppId } from '@/shell/appRegistry';
 import { AppSwitcher } from '@/shell/AppSwitcher';
@@ -77,6 +79,8 @@ import { alarmsSnapshot, disableAlarm, hydrateAlarms, onTestAlarm } from '@/stor
 import { tmFinish, useTimer } from '@/stores/timerStore';
 import { isRepeating } from '@/apps/clock/data';
 import type { AlarmDef } from '@/apps/clock/data';
+
+const PEEK_FALLBACK_WALL = 'lockscreen.jpg';
 
 
 const RESET_KEEPS_LOCAL = ['sd-phone:setup:', 'sd-phone:auth:', 'sd-phone:music:lib', 'sd-phone:cookie:'];
@@ -201,6 +205,7 @@ export function App() {
 
 function AppContent() {
     const cctvActive = useCctvActive();
+    const bodycamActive = useBodycamActive();
     // Tone/volume fields are deliberately NOT subscribed here — they're only
     // read inside event callbacks (via useThemeStore.getState()), so slider
     // drags in Control Center don't re-render the whole tree from the root.
@@ -927,6 +932,11 @@ function AppContent() {
     const peekTimer = useRef<number | undefined>(undefined);
     // An ongoing call keeps the closed shell peeked (green island + timer) until it ends.
     const callOngoing = useCallStore(s => s.phase !== null);
+    const callIncoming = useCallStore(s => s.phase === 'incoming');
+    const callerName = useCallStore(s => s.name);
+    const callerNumber = useCallStore(s => s.number);
+
+    useCallRing(device.calls);
     const callOngoingRef = useRef(callOngoing);
     callOngoingRef.current = callOngoing;
     const callPeekRef = useRef(false);
@@ -1179,7 +1189,7 @@ function AppContent() {
     }, []);
 
     useEffect(() => {
-        if (wallpaperLock) warmImage(resolveWallpaper(wallpaperLock));
+        warmImage(resolveWallpaper(wallpaperLock || PEEK_FALLBACK_WALL));
         if (wallpaperHome) warmImage(resolveWallpaper(wallpaperHome));
     }, [wallpaperLock, wallpaperHome, warmImage]);
 
@@ -1432,7 +1442,7 @@ function AppContent() {
 
     if (!view) {
         const lv = lastViewRef.current;
-        const peekWall = resolveWallpaper(wallpaperLock || lv?.wallpaperLock || 'lockscreen.jpg');
+        const peekWall = resolveWallpaper(wallpaperLock || lv?.wallpaperLock || PEEK_FALLBACK_WALL);
         return (
             <>
                 {deckLayer}
@@ -1452,7 +1462,9 @@ function AppContent() {
                             noService={noService || noServiceArea}
                             light
                         />
-                        {ringingAlarm ? (
+                        {callIncoming ? (
+                            <CallPeekBanner name={callerName} number={callerNumber} />
+                        ) : ringingAlarm ? (
                             <AlarmPeekBanner name={ringingAlarm.label} since={ringingSince} />
                         ) : (
                             <NotificationHost
@@ -1493,7 +1505,7 @@ function AppContent() {
         && (!isFiveM || serverSetupDone !== null);
 
     const cameraMode = currentApp === 'camera' && !isClosing && !locked;
-    const onCamera = cctvActive !== null;
+    const onCamera = cctvActive !== null || bodycamActive !== null;
 
     const onHomescreen = !showSetup && !locked && !currentApp;
 
@@ -1723,6 +1735,7 @@ function AppContent() {
             </PhoneShell>
         </div>
         {cctvActive && <CctvOverlay active={cctvActive} />}
+        {bodycamActive && <BodycamOverlay active={bodycamActive} />}
         </>
     );
 }

@@ -4,6 +4,7 @@ import { Camera, ChevronRight, Flashlight } from 'lucide-react';
 
 import { device } from '@device';
 import { useGrid } from '@/device/grid';
+import { APP_LABEL_CLASS, appLabelStyle } from '@/shell/appLabel';
 import { t } from '@/i18n';
 import { formatClockTime, formatLongDate, useDisplayClock } from '@/hooks/useClock';
 import { useIosPush } from '@/hooks/useIosPush';
@@ -269,7 +270,8 @@ function HomePreview({ wallpaper, blurred, animating }: { wallpaper: string; blu
 
 // Static replica of shell/AppIcon.tsx's resting look (tile, radius, shadow, label).
 function PreviewIcon({ icon, label }: { icon: string; label?: string }) {
-    const TILE = useGrid().icon;
+    const grid = useGrid();
+    const TILE = grid.icon;
     return (
         <div className="flex w-full flex-col items-center gap-[7px]">
             <div
@@ -287,8 +289,8 @@ function PreviewIcon({ icon, label }: { icon: string; label?: string }) {
             </div>
             {label && (
                 <span
-                    className="w-full truncate text-center font-sf text-[13px] font-semibold tracking-[0.01em] text-white"
-                    style={{ textShadow: '0 0 2px rgba(0,0,0,0.9), 0 1px 3px rgba(0,0,0,0.95), 0 2px 6px rgba(0,0,0,0.5)' }}
+                    className={APP_LABEL_CLASS}
+                    style={appLabelStyle(grid)}
                 >
                     {label}
                 </span>

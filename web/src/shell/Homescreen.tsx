@@ -4,6 +4,7 @@ import { LayoutGrid, Minus, Plus } from 'lucide-react';
 
 import { device } from '@device';
 import { DOCK_BOTTOM, DOCK_PAD_Y, DOTS_GAP, getDensity, getGrid, stripReserve, useGrid } from '@/device/grid';
+import { APP_LABEL_CLASS, appLabelStyle } from './appLabel';
 import type { AppDef } from '@/core/types';
 import { useTheme } from '@/stores/themeStore';
 import { resolveWallpaper } from './wallpapers';
@@ -1319,7 +1320,8 @@ export function Homescreen({ apps, dock, firstPageApps, wallpaper, onLaunchApp, 
 }
 
 function EditTile({ app, dragging, swapTarget, plopping, removable, merging, badge, onRemove }: { app: AppDef; dragging: boolean; swapTarget: boolean; plopping: boolean; removable: boolean; merging: boolean; badge?: number; onRemove: () => void }): ReactNode {
-    const TILE = useGrid().icon;
+    const grid = useGrid();
+    const TILE = grid.icon;
     const showNames = useShowAppNames();
     const {
         background, glyph, art, radius, glyphSize, glyphWeight, boxShadow,
@@ -1351,7 +1353,7 @@ function EditTile({ app, dragging, swapTarget, plopping, removable, merging, bad
                     </button>
                 )}
             </div>
-            {showLabel && <span className="mt-[7px] block w-full truncate text-center font-sf text-[13px] font-semibold tracking-[0.01em] text-white" style={{ textShadow: '0 0 2px rgba(0,0,0,0.9), 0 1px 3px rgba(0,0,0,0.95), 0 2px 6px rgba(0,0,0,0.5)', color: labelColor, fontWeight: labelWeight }}>{app.label}</span>}
+            {showLabel && <span className={`mt-[7px] block ${APP_LABEL_CLASS}`} style={{ ...appLabelStyle(grid), color: labelColor, fontWeight: labelWeight }}>{app.label}</span>}
         </div>
     );
 }
@@ -1392,7 +1394,8 @@ function FolderMini({ app }: { app: AppDef }): ReactNode {
 }
 
 function FolderTile({ label, apps, onOpen, merging = false, badge }: { label: string; apps: AppDef[]; onOpen: () => void; merging?: boolean; badge?: number }): ReactNode {
-    const TILE = useGrid().icon;
+    const grid = useGrid();
+    const TILE = grid.icon;
     const showNames = useShowAppNames();
     return (
         <button type="button" onClick={onOpen} className="group block" style={{ width: TILE }}>
@@ -1414,7 +1417,7 @@ function FolderTile({ label, apps, onOpen, merging = false, badge }: { label: st
                 </div>
                 <AppBadge count={badge} />
             </div>
-            {showNames && <span className="mt-[7px] block w-full truncate text-center font-sf text-[13px] font-semibold tracking-[0.01em] text-white" style={{ textShadow: '0 0 2px rgba(0,0,0,0.9), 0 1px 3px rgba(0,0,0,0.95), 0 2px 6px rgba(0,0,0,0.5)' }}>{label}</span>}
+            {showNames && <span className={`mt-[7px] block ${APP_LABEL_CLASS}`} style={appLabelStyle(grid)}>{label}</span>}
         </button>
     );
 }

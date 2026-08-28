@@ -133,8 +133,33 @@ function store.recordMigration(name, stats)
     )
 end
 
----@type string Marker-row prefix for a single completed domain.
+---@type string Marker-row prefix for a single completed domain. Historically lb-phone was the only
+---import source, so every mark already on disk carries this prefix; it stays the lb-phone source's
+---own prefix rather than becoming a general one, and other sources bring their own.
 local DOMAIN_MARKER = 'lbphone:'
+
+---Every completed-domain marker name, unstripped. A caller that knows about more than one import
+---source needs the whole name, because the source is encoded in its prefix.
+---@return table<string, boolean>
+function store.completedMarks()
+    local rows = MySQL.query.await('SELECT name FROM phone_migrations') or {}
+    local set = {}
+    for _, r in ipairs(rows) do
+        local name = tostring(r.name)
+        if name ~= '' then set[name] = true end
+    end
+    return set
+end
+
+---Records one completed domain under its full marker name, source prefix included. Idempotent.
+---@param mark string full marker name
+---@param stats table|nil per-domain counts
+function store.recordMark(mark, stats)
+    MySQL.query.await(
+        'INSERT IGNORE INTO phone_migrations (name, stats) VALUES (?, ?)',
+        { mark, json.encode(stats or {}) }
+    )
+end
 
 ---The set of domain keys already imported. Gating per domain (rather than one marker for the whole
 ---import) is what lets a server that ran an earlier version pick up only the domains added since.
@@ -200,6 +225,10 @@ function store.loadRoster(frameworkName)
     local ok, rows = pcall(function()
         if frameworkName == 'esx' then
             return MySQL.query.await('SELECT identifier AS citizenid, NULL AS license FROM users') or {}
+        end
+        if frameworkName == 'nd' then
+            return MySQL.query.await(
+                'SELECT CAST(charid AS CHAR) AS citizenid, identifier AS license FROM nd_characters') or {}
         end
         return MySQL.query.await('SELECT citizenid, license FROM players') or {}
     end)
@@ -419,6 +448,76 @@ end
 ---@param rows any[][]
 function store.insertBlocked(rows)
     insertMulti('INSERT IGNORE INTO phone_blocked (citizenid, number) VALUES', 2, rows)
+end
+
+---Insert a batch of Marketplace listings. rows:
+---{ citizenid, title, body, price, image, images, number, email, created_at }. `id` is left out
+---because the target column is auto-increment.
+---@param rows any[][]
+function store.insertMarketplace(rows)
+    insertMulti('INSERT IGNORE INTO marketplace_listings (citizenid, title, body, price, image, images, `number`, email, created_at) VALUES', 9, rows)
+end
+
+---Insert a batch of Pages posts. Same row shape as insertMarketplace: the two apps share a schema.
+---@param rows any[][]
+function store.insertPages(rows)
+    insertMulti('INSERT IGNORE INTO pages_posts (citizenid, title, body, price, image, images, `number`, email, created_at) VALUES', 9, rows)
+end
+
+---Insert a batch of Cherry profiles. rows:
+---{ username, name, age, about, gender, interested, visible, photos, updated_at }.
+---@param rows any[][]
+function store.insertCherryProfiles(rows)
+    insertMulti('INSERT IGNORE INTO phone_cherry_profiles (username, name, age, about, gender, interested, visible, photos, updated_at) VALUES', 9, rows)
+end
+
+---Insert a batch of Cherry swipes. rows: { swiper, target, liked, created_at }.
+---@param rows any[][]
+function store.insertCherrySwipes(rows)
+    insertMulti('INSERT IGNORE INTO phone_cherry_swipes (swiper, target, liked, created_at) VALUES', 4, rows)
+end
+
+---Insert a batch of Cherry matches. rows: { id, a, b, created_at }.
+---@param rows any[][]
+function store.insertCherryMatches(rows)
+    insertMulti('INSERT IGNORE INTO phone_cherry_matches (id, a, b, created_at) VALUES', 4, rows)
+end
+
+---Insert a batch of Cherry messages. rows: { id, match_id, sender, kind, body, meta, created_at }.
+---@param rows any[][]
+function store.insertCherryMessages(rows)
+    insertMulti('INSERT IGNORE INTO phone_cherry_messages (id, match_id, sender, kind, body, meta, created_at) VALUES', 7, rows)
+end
+
+---Insert a batch of Dark Chat rooms. rows: { id, code, name, owner, created_at }.
+---@param rows any[][]
+function store.insertDarkchatRooms(rows)
+    insertMulti('INSERT IGNORE INTO `darkchat_rooms` (id, code, name, owner, created_at) VALUES', 5, rows)
+end
+
+---Insert a batch of Dark Chat memberships. rows: { room_id, citizenid, joined_at }.
+---@param rows any[][]
+function store.insertDarkchatMembers(rows)
+    insertMulti('INSERT IGNORE INTO `darkchat_members` (room_id, citizenid, joined_at) VALUES', 3, rows)
+end
+
+---Insert a batch of Dark Chat messages. rows: { room_id, citizenid, author, body, kind, meta, created_at }.
+---@param rows any[][]
+function store.insertDarkchatMessages(rows)
+    insertMulti('INSERT IGNORE INTO `darkchat_messages` (room_id, citizenid, author, body, kind, meta, created_at) VALUES', 7, rows)
+end
+
+---Insert a batch of Dark Chat nicknames. rows: { citizenid, nickname }.
+---@param rows any[][]
+function store.insertDarkchatNicknames(rows)
+    insertMulti('INSERT IGNORE INTO `darkchat_nicknames` (citizenid, nickname) VALUES', 2, rows)
+end
+
+---Insert a batch of Weazel News articles. rows:
+---{ category, headline, dek, body, author, author_cid, image, featured, views, created_at, updated_at }.
+---@param rows any[][]
+function store.insertWeazelArticles(rows)
+    insertMulti('INSERT IGNORE INTO `phone_weazel_articles` (category, headline, dek, body, author, author_cid, image, featured, views, created_at, updated_at) VALUES', 11, rows)
 end
 
 ---Insert a batch of call-log rows. rows: { id, citizenid, number, name, direction, duration, seen, called_at }.
@@ -717,6 +816,112 @@ end
 ---@param rows any[][] { id, recipient, kind, actor, post_id, seen, created_at }
 function store.insertPgNotifications(rows)
     insertMulti('INSERT IGNORE INTO phone_photogram_notifications (id, recipient, kind, actor, post_id, seen, created_at) VALUES', 7, rows)
+end
+
+---Usernames already present in Clout, so a migrated account never overwrites a live one.
+---@return table<string, boolean>
+function store.existingVibezUsernames()
+    local rows = MySQL.query.await('SELECT username FROM phone_vibez_profiles') or {}
+    local set = {}
+    for _, r in ipairs(rows) do set[r.username] = true end
+    return set
+end
+
+---@return table[]
+function store.lbTkAccounts()
+    return MySQL.query.await(([[
+        SELECT username, name AS display_name, password, bio, avatar, verified,
+               phone_number, UNIX_TIMESTAMP(date_joined) AS ts
+        FROM %s
+    ]]):format(lbt('tiktok_accounts'))) or {}
+end
+
+---lb calls the video file `src` and the audio track `music`; Clout calls them `video` and `sound`.
+---There is no poster frame on lb's side at all, so `thumb` is left for Clout to fill in.
+---@return table[]
+function store.lbTkVideos()
+    return MySQL.query.await(([[
+        SELECT id, username, src, caption, music, views, UNIX_TIMESTAMP(`timestamp`) AS ts FROM %s
+    ]]):format(lbt('tiktok_videos'))) or {}
+end
+
+---@return table[]
+function store.lbTkComments()
+    return MySQL.query.await(([[
+        SELECT id, video_id, reply_to, username, comment, UNIX_TIMESTAMP(`timestamp`) AS ts FROM %s
+    ]]):format(lbt('tiktok_comments'))) or {}
+end
+
+---@return table[]
+function store.lbTkLikes()
+    return MySQL.query.await(
+        ('SELECT username, video_id FROM %s'):format(lbt('tiktok_likes'))) or {}
+end
+
+---@return table[]
+function store.lbTkSaves()
+    return MySQL.query.await(
+        ('SELECT username, video_id FROM %s'):format(lbt('tiktok_saves'))) or {}
+end
+
+---@return table[]
+function store.lbTkCommentLikes()
+    return MySQL.query.await(
+        ('SELECT username, comment_id FROM %s'):format(lbt('tiktok_comments_likes'))) or {}
+end
+
+---@return table[]
+function store.lbTkFollows()
+    return MySQL.query.await(
+        ('SELECT followed, follower FROM %s'):format(lbt('tiktok_follows'))) or {}
+end
+
+---@return table[]
+function store.lbTkNotifications()
+    return MySQL.query.await(([[
+        SELECT id, username, `from` AS from_user, `type`, video_id, UNIX_TIMESTAMP(`timestamp`) AS ts
+        FROM %s
+    ]]):format(lbt('tiktok_notifications'))) or {}
+end
+
+---@param rows any[][] { username, display_name, bio, avatar, verified, created_at }
+function store.insertVzProfiles(rows)
+    insertMulti('INSERT IGNORE INTO phone_vibez_profiles (username, display_name, bio, avatar, verified, created_at) VALUES', 6, rows)
+end
+
+---@param rows any[][] { id, author, video, thumb, caption, sound, views, created_at }
+function store.insertVzPosts(rows)
+    insertMulti('INSERT IGNORE INTO phone_vibez_posts (id, author, video, thumb, caption, sound, views, created_at) VALUES', 8, rows)
+end
+
+---@param rows any[][] { id, post_id, author, body, gif_url, created_at }
+function store.insertVzComments(rows)
+    insertMulti('INSERT IGNORE INTO phone_vibez_comments (id, post_id, author, body, gif_url, created_at) VALUES', 6, rows)
+end
+
+---@param rows any[][] { post_id, username, created_at }
+function store.insertVzLikes(rows)
+    insertMulti('INSERT IGNORE INTO phone_vibez_likes (post_id, username, created_at) VALUES', 3, rows)
+end
+
+---@param rows any[][] { post_id, username, created_at }
+function store.insertVzSaves(rows)
+    insertMulti('INSERT IGNORE INTO phone_vibez_saves (post_id, username, created_at) VALUES', 3, rows)
+end
+
+---@param rows any[][] { comment_id, username, created_at }
+function store.insertVzCommentLikes(rows)
+    insertMulti('INSERT IGNORE INTO phone_vibez_comment_likes (comment_id, username, created_at) VALUES', 3, rows)
+end
+
+---@param rows any[][] { follower, target, created_at }
+function store.insertVzFollows(rows)
+    insertMulti('INSERT IGNORE INTO phone_vibez_follows (follower, target, created_at) VALUES', 3, rows)
+end
+
+---@param rows any[][] { id, recipient, kind, actor, post_id, preview, seen, created_at }
+function store.insertVzNotifications(rows)
+    insertMulti('INSERT IGNORE INTO phone_vibez_notifications (id, recipient, kind, actor, post_id, preview, seen, created_at) VALUES', 8, rows)
 end
 
 ---Fills in an lb-phone password hash on accounts that have none.

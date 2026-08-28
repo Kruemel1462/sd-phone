@@ -50,25 +50,40 @@ export function MigrationPage({ toast }: { toast: (text: string, error?: boolean
     const toastRef = useRef(toast);
     toastRef.current = toast;
 
-    const refresh = useCallback(async (quiet?: boolean) => {
+    const refresh = useCallback(async (quiet?: boolean, sourceKey?: string) => {
         if (!quiet) setScanning(true);
-        const res = await adminMigrateScan();
+        const res = await adminMigrateScan(sourceKey);
         setScanning(false);
         if (!res.success || !res.data) {
-            toastRef.current(res.message ?? 'Could not read the lb-phone database', true);
+            toastRef.current(res.message ?? 'Could not read the source database', true);
             return;
         }
         setScan(res.data);
         setSelected(prev => {
-            if (prev.size > 0) return prev;
+            const domains = res.data!.domains;
+            const runnable = new Set(
+                domains.filter(d => !d.locked && d.status === 'pending').map(d => d.key),
+            );
+
+            if (prev.size === 0 || sourceKey) {
+                const next = new Set<string>();
+                for (const d of domains) if (runnable.has(d.key) && d.rows > 0) next.add(d.key);
+                if (runnable.has(REQUIRED)) next.add(REQUIRED);
+                return next;
+            }
+
             const next = new Set<string>();
-            for (const d of res.data!.domains) if (!d.locked && d.status === 'pending' && d.rows > 0) next.add(d.key);
-            if (!res.data!.domains.some(d => d.key === REQUIRED && d.locked)) next.add(REQUIRED);
+            for (const key of prev) if (runnable.has(key)) next.add(key);
             return next;
         });
     }, []);
 
     useEffect(() => { void refresh(); }, [refresh]);
+
+    const pickSource = useCallback((key: string) => {
+        setSelected(new Set());
+        void refresh(false, key);
+    }, [refresh]);
 
     const prevPhase = useRef(state.phase);
     useEffect(() => {
@@ -90,18 +105,19 @@ export function MigrationPage({ toast }: { toast: (text: string, error?: boolean
                 next.add(key);
                 if (domain?.requires) next.add(domain.requires);
             }
-            next.add(REQUIRED);
+            const numbers = scan?.domains.find(d => d.key === REQUIRED);
+            if (numbers && !numbers.locked && numbers.status === 'pending') next.add(REQUIRED);
             return next;
         });
     }, [scan]);
 
     const picked = useMemo(
-        () => (scan?.domains ?? []).filter(d => selected.has(d.key)),
+        () => (scan?.domains ?? []).filter(d => selected.has(d.key) && !d.locked && d.status === 'pending'),
         [scan, selected],
     );
 
     const selectable = useMemo(
-        () => (scan?.domains ?? []).filter(d => !d.locked && d.rows > 0),
+        () => (scan?.domains ?? []).filter(d => !d.locked && d.status === 'pending' && d.rows > 0),
         [scan],
     );
     const allPicked = selectable.length > 0 && selectable.every(d => selected.has(d.key));
@@ -118,10 +134,10 @@ export function MigrationPage({ toast }: { toast: (text: string, error?: boolean
     const start = useCallback(async () => {
         setConfirming(false);
         setStarting(true);
-        const res = await adminMigrateStart(picked.map(d => d.key), dryRun);
+        const res = await adminMigrateStart(picked.map(d => d.key), dryRun, scan?.source);
         setStarting(false);
         if (!res.success) toastRef.current(res.message ?? 'The import would not start', true);
-    }, [picked, dryRun]);
+    }, [picked, dryRun, scan]);
 
     const stop = useCallback(async () => {
         const res = await adminMigrateStop();
@@ -129,14 +145,55 @@ export function MigrationPage({ toast }: { toast: (text: string, error?: boolean
     }, []);
 
     if (scanning && !scan) {
-        return <CenterNote><Spinner /> Reading the lb-phone database...</CenterNote>;
+        return <CenterNote><Spinner /> Reading the source database...</CenterNote>;
     }
+
+    const sourceOptions = scan?.sources ?? [];
+    const activeSource = sourceOptions.find(s => s.key === scan?.source);
+    const anySourcePresent = sourceOptions.some(s => s.present);
+    const sourceTitle = activeSource?.title ?? 'Phone';
+
+    const sourcePicker = sourceOptions.length > 1 ? (
+        <Card title="Import from">
+            <div className="px-4 py-3.5">
+                <div className="flex flex-wrap gap-2">
+                    {sourceOptions.map(s => (
+                        <Btn
+                            key={s.key}
+                            variant={s.key === scan?.source ? 'primary' : 'subtle'}
+                            disabled={!s.present || running}
+                            onClick={() => pickSource(s.key)}
+                            title={s.present ? s.blurb : `No ${s.title} tables in this database`}
+                        >
+                            <Database size={13} />
+                            {s.title}
+                        </Btn>
+                    ))}
+                </div>
+                {activeSource && (
+                    <p className="mt-3 text-[12.5px] leading-relaxed text-zinc-400">
+                        {activeSource.blurb}
+                    </p>
+                )}
+                {!anySourcePresent && (
+                    <p className="mt-2 text-[12.5px] leading-relaxed text-ios-orange">
+                        Neither source is present in this database. Load the old phone&apos;s tables alongside sd-phone&apos;s, then scan again.
+                    </p>
+                )}
+            </div>
+        </Card>
+    ) : null;
 
     if (scan && !scan.lbFound) {
         return (
-            <CenterNote>
-                This database holds no lb-phone tables, so there is nothing to bring across.
-            </CenterNote>
+            <div className="space-y-3">
+                {sourcePicker}
+                <CenterNote>
+                    {anySourcePresent
+                        ? `This database holds no ${activeSource?.title ?? 'matching'} tables. Pick another source above.`
+                        : `This database holds no ${sourceOptions.map(s => s.title).join(' or ')} tables, so there is nothing to bring across.`}
+                </CenterNote>
+            </div>
         );
     }
 
@@ -212,7 +269,7 @@ export function MigrationPage({ toast }: { toast: (text: string, error?: boolean
     const heading = (
         <span className="flex items-center gap-2">
             <Database size={15} className="text-zinc-500" />
-            lb-phone import
+            {sourceTitle} import
             <Badge tone={PHASE_TONE[state.phase] ?? 'neutral'}>{PHASE_LABEL[state.phase] ?? state.phase}</Badge>
             {state.dryRun && <Badge tone="amber">Counting only</Badge>}
         </span>
@@ -263,6 +320,7 @@ export function MigrationPage({ toast }: { toast: (text: string, error?: boolean
             eta={eta}
             height={consoleMode ? 190 : 116}
             started={started}
+            sourceTitle={sourceTitle}
         />
     );
 
@@ -281,6 +339,7 @@ export function MigrationPage({ toast }: { toast: (text: string, error?: boolean
 
     return (
         <div className="space-y-4">
+            {sourcePicker}
             <Card title={heading} actions={controls}>
                 {id && (
                     <div className="grid grid-cols-4 gap-3 px-4 pt-4 text-[12.5px]">

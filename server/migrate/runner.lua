@@ -4,51 +4,26 @@ local config    = require 'configs.config'
 local framework = require 'bridge.shared.framework'
 ---@type table Migration SQL (server.migrate.store): source reads, target writes, markers.
 local store     = require 'server.migrate.store'
----@type table Owner matching (server.migrate.identity): lb phone owner -> citizenid.
-local identity  = require 'server.migrate.identity'
 ---@type table Domain planner (server.migrate.plan): queue / done / disabled split.
 local plan      = require 'server.migrate.plan'
 ---@type table Import phrasing (server.migrate.format): counts, durations, summaries.
 local fmt       = require 'server.migrate.format'
 ---@type table Import telemetry (server.migrate.events): console + panel fan-out.
 local events    = require 'server.migrate.events'
+---@type table Import source registry (server.migrate.sources): which phone the rows come from.
+local sources   = require 'server.migrate.sources.init'
 
 local runner = {}
 
----@type string Whole-import marker written before domains were marked individually.
-local LEGACY_MIGRATION = 'lbphone-import-v1'
-
----@type string[] Domains that the legacy marker covered, backfilled so they are not re-run.
-local LEGACY_DOMAINS = {
-    'numbers', 'contacts', 'blocked', 'calls', 'messages', 'photos', 'notes',
-}
-
----@type { key: string, label: string, run: fun(ctx: table): table }[] Domains, in run order.
-local PORTS = {
-    { key = 'numbers',    label = 'numbers',    run = require('server.migrate.port.numbers').run },
-    { key = 'contacts',   label = 'contacts',   run = require('server.migrate.port.contacts').run },
-    { key = 'blocked',    label = 'blocked',    run = require('server.migrate.port.blocked').run },
-    { key = 'calls',      label = 'calls',      run = require('server.migrate.port.calls').run },
-    { key = 'messages',   label = 'messages',   run = require('server.migrate.port.messages').run },
-    -- After messages: joins on the `m<id>` mid values that porter writes.
-    { key = 'reactions',  label = 'reactions',  run = require('server.migrate.port.reactions').run },
-    { key = 'photos',     label = 'photos',     run = require('server.migrate.port.photos').run },
-    { key = 'notes',      label = 'notes',      run = require('server.migrate.port.notes').run },
-    { key = 'settings',   label = 'settings',   run = require('server.migrate.port.settings').run },
-    { key = 'photogram',  label = 'photogram',  run = require('server.migrate.port.photogram').run },
-    { key = 'birdy',      label = 'birdy',      run = require('server.migrate.port.birdy').run },
-    { key = 'mail',       label = 'mail',       run = require('server.migrate.port.mail').run },
-    { key = 'wallet',     label = 'wallet',     run = require('server.migrate.port.wallet').run },
-    { key = 'voicememos', label = 'voicememos', run = require('server.migrate.port.voicememos').run },
-    -- Last: links sessions to the accounts the photogram and Squawk porters created.
-    { key = 'sessions',   label = 'sessions',   run = require('server.migrate.port.sessions').run },
-}
-
----@type table<string, string> Domains that cannot land without another having run first. `numbers`
----is required by everything and is handled separately; these are the pairwise joins.
-local REQUIRES = {
-    reactions = 'messages',
-    sessions  = 'photogram',
+---@type table<string, table<string, string>> The name the SOURCE phone gives an app, shown in
+---brackets after sd-phone's own name so the operator recognises what they are migrating from. A
+---domain absent here takes no bracket, which is right when both sides call it the same thing.
+local FOREIGN_NAMES = {
+    lbphone = { photogram = 'InstaPic', birdy = 'Birdy', vibez = 'Trendy', wallet = 'Wallet',
+                pages = 'Yellow Pages' },
+    yseries = { photogram = 'Instashots', birdy = 'Y', wallet = 'YPay', marketplace = 'YBuy',
+                pages = 'PromoHub', photos = 'Gallery', calls = 'Recents', cherry = 'Lovr',
+                weazelnews = 'News', mail = 'YCloud Mail' },
 }
 
 ---@type table<string, string> What the panel calls each domain. sd-phone's own name leads, because
@@ -65,12 +40,18 @@ local TITLES = {
     photos     = 'Photos and albums',
     notes      = 'Notes',
     settings   = 'Phone settings',
-    photogram  = 'Photogram (InstaPic)',
-    birdy      = 'Squawk (Birdy)',
+    photogram  = 'Photogram',
+    birdy      = 'Squawk',
+    vibez      = 'Clout',
     mail       = 'Mail',
-    wallet     = 'Bank (Wallet)',
+    wallet     = 'Bank',
     voicememos = 'Voice Memos',
     sessions   = 'Signed-in accounts',
+    marketplace = 'Marketplace',
+    pages      = 'Pages',
+    cherry     = 'Cherry',
+    darkchat   = 'Dark Chat',
+    weazelnews = 'Weazel News',
 }
 
 ---@type table<string, string> One line per domain describing what it carries, for the panel.
@@ -86,10 +67,16 @@ local BLURB = {
     settings   = 'Wallpaper, theme, clock format, ringtones, volumes, home layout.',
     photogram  = 'Photogram accounts, posts, comments, likes, follows, stories and DMs.',
     birdy      = 'Squawk accounts, posts and replies, likes, reposts, follows and DMs.',
+    vibez      = 'Clout accounts, videos, comments, likes, saves, follows and notifications.',
     mail       = 'Mailboxes and their received messages.',
     wallet     = 'Wallet transaction history.',
     voicememos = 'Voice memo recordings.',
     sessions   = 'Keeps migrated players signed into their accounts.',
+    marketplace = 'For-sale listings with their photos and asking prices.',
+    pages      = 'Business and service adverts from the Yellow Pages board.',
+    cherry     = 'Dating profiles, swipes, matches and the messages inside them.',
+    darkchat   = 'Anonymous chat rooms, who was in them and what was said.',
+    weazelnews = 'Published news articles with their headlines and images.',
 }
 
 -- sd-phone tables the porters write into; the migration waits for all of them. Names lb-phone
@@ -107,35 +94,15 @@ local TARGETS = {
     'phone_photogram_notifications', 'phone_app_accounts', 'phone_app_sessions',
     'phone_birdy_profiles', 'phone_birdy_posts', 'phone_birdy_likes', 'phone_birdy_reposts',
     'phone_birdy_follows', 'phone_birdy_dms', 'phone_birdy_notifications',
+    'phone_vibez_profiles', 'phone_vibez_posts', 'phone_vibez_comments', 'phone_vibez_likes',
+    'phone_vibez_comment_likes', 'phone_vibez_saves', 'phone_vibez_follows',
+    'phone_vibez_notifications',
     { 'phone_mail_accounts', 'password_hash' }, { 'phone_message_reactions', 'mid' },
     'phone_bank_transactions', 'phone_voice_memos',
-}
-
----@type table<string, string[]> Source tables each domain reads, for the pre-flight row count. A
----domain missing here simply reports no estimate.
-local DOMAIN_SOURCES = {
-    numbers    = { 'phones' },
-    contacts   = { 'phone_contacts' },
-    blocked    = { 'phone_blocked_numbers' },
-    calls      = { 'phone_calls' },
-    messages   = { 'message_channels', 'message_members', 'message_messages' },
-    reactions  = { 'message_reactions' },
-    photos     = { 'photos', 'photo_albums', 'photo_album_photos' },
-    notes      = { 'notes' },
-    settings   = { 'phones' },
-    photogram  = {
-        'instagram_accounts', 'instagram_posts', 'instagram_comments', 'instagram_likes',
-        'instagram_follows', 'instagram_follow_requests', 'instagram_stories',
-        'instagram_stories_views', 'instagram_messages', 'instagram_notifications',
-    },
-    birdy      = {
-        'twitter_accounts', 'twitter_tweets', 'twitter_likes', 'twitter_retweets',
-        'twitter_follows', 'twitter_messages', 'twitter_notifications',
-    },
-    mail       = { 'mail_accounts', 'mail_messages' },
-    wallet     = { 'wallet_transactions' },
-    voicememos = { 'voice_memos_recordings' },
-    sessions   = { 'logged_in_accounts' },
+    'marketplace_listings', 'pages_posts',
+    'phone_cherry_profiles', 'phone_cherry_swipes', 'phone_cherry_matches', 'phone_cherry_messages',
+    'darkchat_rooms', 'darkchat_members', 'darkchat_messages', 'darkchat_nicknames',
+    'phone_weazel_articles',
 }
 
 ---@type boolean True while a run owns the engine. One run at a time, server wide: the writes are
@@ -154,25 +121,51 @@ local lastScan = nil
 ---@return boolean
 function runner.busy() return busy end
 
----Whether the lb-phone source tables are present at all.
----@return boolean
-local function lbPresent()
-    return store.tableExists(store.lbTable('phones'))
+---The panel's name for one domain: sd-phone's own app name, plus the source phone's name for the
+---same app in brackets when the two differ.
+---@param src table import source
+---@param port { key: string, label: string }
+---@return string
+local function titleFor(src, port)
+    local base = TITLES[port.key] or port.label
+    local foreign = (FOREIGN_NAMES[src.key] or {})[port.key]
+    if not foreign or foreign == base then return base end
+    return ('%s (%s)'):format(base, foreign)
 end
 
 ---Marker bookkeeping shared by the scan and the run: makes sure the marker table exists and that a
 ---pre-domain-marker install has its domains backfilled.
 ---@return table<string, boolean> completed domain keys
-local function completed()
+local function completed(src)
     store.ensureMarkerTable()
-    store.backfillLegacyDomains(LEGACY_MIGRATION, LEGACY_DOMAINS)
-    return store.completedDomains()
+    if src.legacyMark then store.backfillLegacyDomains(src.legacyMark, src.legacyDomains or {}) end
+
+    local out = {}
+    for mark in pairs(store.completedMarks()) do
+        local domain = sources.domainFor(src, mark)
+        if domain then out[domain] = true end
+    end
+    return out
+end
+
+---Every import source this database could be read from, for the panel's source picker.
+---@return { key: string, label: string, title: string, blurb: string, present: boolean }[]
+function runner.sourceList()
+    local out = {}
+    for _, src in ipairs(sources.all) do
+        local ok, present = pcall(src.detect)
+        out[#out + 1] = {
+            key = src.key, label = src.label, title = src.title, blurb = src.blurb,
+            present = ok and present == true,
+        }
+    end
+    return out
 end
 
 ---Pre-flight preview: what is on the other side, what has already landed, and how big the job is.
 ---Writes nothing. This is what the admin panel renders before anything runs.
 ---@return table
-function runner.scan()
+function runner.scan(sourceKey)
     if busy and lastScan then
         local cached = {}
         for k, v in pairs(lastScan) do cached[k] = v end
@@ -180,19 +173,23 @@ function runner.scan()
         return cached
     end
 
-    if not lbPresent() then
-        return { ok = true, lbFound = false, domains = {}, totalRows = 0, busy = busy }
+    local src = sources.resolve(sourceKey)
+
+    if not src.detect() then
+        return {
+            ok = true, lbFound = false, source = src.key, sources = runner.sourceList(),
+            domains = {}, totalRows = 0, busy = busy,
+        }
     end
 
     local cfg   = config.Migrate or {}
-    local done  = completed()
+    local done  = completed(src)
     local stats = store.completedDomainStats()
-    local ctx   = identity.build(cfg, framework)
+    local ctx   = src.identity(cfg, framework)
 
     local domains, totalRows = {}, 0
-    for _, port in ipairs(PORTS) do
-        local sources = DOMAIN_SOURCES[port.key]
-        local rows = sources and store.lbRowCount(sources) or 0
+    for _, port in ipairs(src.ports) do
+        local rows = src.rowCount(port.key)
         local status = 'pending'
         if cfg.domains and cfg.domains[port.key] == false then
             status = 'disabled'
@@ -203,11 +200,11 @@ function runner.scan()
         domains[#domains + 1] = {
             key      = port.key,
             label    = port.label,
-            title    = TITLES[port.key] or port.label,
+            title    = titleFor(src, port),
             blurb    = BLURB[port.key],
             rows     = rows,
             status   = status,
-            requires = REQUIRES[port.key],
+            requires = (src.requires or {})[port.key],
             estimate = fmt.estimate(rows),
             -- A finished domain is settled: its writes were fill-only and every row it could place
             -- is already placed, so running it again can only repeat work to no effect.
@@ -221,6 +218,8 @@ function runner.scan()
     lastScan = {
         ok        = true,
         lbFound   = true,
+        source    = src.key,
+        sources   = runner.sourceList(),
         busy      = busy,
         domains   = domains,
         totalRows = totalRows,
@@ -255,6 +254,7 @@ end
 ---the panel does.
 ---@param opts { domains?: table<string, boolean>, dryRun?: boolean, force?: boolean, by?: string }
 local function execute(opts)
+    local src       = sources.resolve(opts.source)
     local cfg       = config.Migrate or {}
     local dryRun    = opts.dryRun or cfg.dryRun or false
     local selection = opts.domains
@@ -271,16 +271,16 @@ local function execute(opts)
     })
 
     events.log('info', dryRun
-        and 'starting lb-phone import (DRY RUN: counting only, nothing will be written).'
-        or  'starting lb-phone import.')
+        and ('starting %s import (DRY RUN: counting only, nothing will be written).'):format(src.title)
+        or  ('starting %s import.'):format(src.title))
 
-    if not lbPresent() then
-        events.log('warn', 'no lb-phone tables found in this database, nothing to import.')
+    if not src.detect() then
+        events.log('warn', ('no %s tables found in this database, nothing to import.'):format(src.title))
         events.setState({ phase = 'done', finishedAt = os.time() }, true)
         return
     end
 
-    local done = completed()
+    local done = completed(src)
 
     -- An explicit tick in the panel overrides the config file, but never the completion marker: a
     -- finished domain has already placed every row it could, and its writes are fill-only, so
@@ -288,7 +288,7 @@ local function execute(opts)
     local split
     if selection then
         local queue, settled, unpicked = {}, {}, {}
-        for _, port in ipairs(PORTS) do
+        for _, port in ipairs(src.ports) do
             if not selection[port.key] then
                 unpicked[#unpicked + 1] = port.key
             elseif done[port.key] and not opts.force then
@@ -299,7 +299,7 @@ local function execute(opts)
         end
         split = { queue = queue, alreadyDone = settled, disabled = unpicked }
     else
-        split = plan.build(PORTS, done, cfg.domains, opts.force)
+        split = plan.build(src.ports, done, cfg.domains, opts.force)
     end
 
     local queue = split.queue
@@ -324,11 +324,11 @@ local function execute(opts)
         return
     end
 
-    local ctx = identity.build(cfg, framework)
+    local ctx = src.identity(cfg, framework)
     ctx.dryRun = dryRun
     local s = ctx.stats
-    events.log('info', ('matching players: %d lb-phone phones -> %d resolved, %d unresolved, %d ambiguous')
-        :format(s.total, s.resolved, s.unresolved, s.ambiguous))
+    events.log('info', ('matching players: %d %s phones -> %d resolved, %d unresolved, %d ambiguous')
+        :format(s.total or 0, src.title, s.resolved or 0, s.unresolved or 0, s.ambiguous or 0))
     events.setState({ identity = s })
 
     local unmatched = s.unresolved + s.ambiguous
@@ -349,7 +349,7 @@ local function execute(opts)
     -- Hand the resolved numbers to the readers so they filter in SQL. Without it every porter pulls
     -- its whole source table across the bridge and discards the vast majority in Lua.
     local owned = {}
-    for _, p in ipairs(ctx.resolvedPhones) do
+    for _, p in ipairs(ctx.resolvedPhones or {}) do
         if p.number and p.number ~= '' then owned[#owned + 1] = p.number end
     end
     store.publishOwnedNumbers(owned)
@@ -357,8 +357,7 @@ local function execute(opts)
     local sizes, totalRows = {}, 0
     local domainState = {}
     for _, port in ipairs(queue) do
-        local sources = DOMAIN_SOURCES[port.key]
-        local n = sources and store.lbRowCount(sources) or 0
+        local n = src.rowCount(port.key)
         sizes[port.key] = n
         totalRows = totalRows + n
         domainState[port.key] = { status = 'queued', rows = n }
@@ -464,7 +463,7 @@ local function execute(opts)
             if type(res) == 'table' and res.retry then
                 events.log('warn', ('%s left pending; it runs again next start.'):format(port.label))
             elseif not dryRun then
-                store.recordDomain(port.key, res)
+                store.recordMark(sources.markFor(src, port.key), res)
             end
         else
             failed[#failed + 1] = port.key
@@ -498,7 +497,7 @@ local function execute(opts)
             events.log('ok', ('imported %s: %s'):format(port.label, line))
         end
     end
-    if not any then events.log('info', 'nothing came across: no lb-phone data matched a character here.') end
+    if not any then events.log('info', ('nothing came across: no %s data matched a character here.'):format(src.title)) end
 
     events.log('info', ('finished in %s: %d ok, %d failed.')
         :format(fmt.elapsed(startedAt), okCount, #failed))

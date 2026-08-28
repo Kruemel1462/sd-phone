@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 
 import { useGrid } from '@/device/grid';
+import { APP_LABEL_CLASS, appLabelStyle } from './appLabel';
 import type { AppDef } from '@/core/types';
 import { useDownloadProgress } from '@/stores/downloadStore';
 import { useIconAppearance, useShowAppNames } from '@/stores/iconThemeStore';
@@ -28,7 +29,8 @@ export interface AppIconProps {
 }
 
 export function AppIcon({ app, label = true, onOpen, badge }: AppIconProps) {
-    const TILE = useGrid().icon;
+    const grid = useGrid();
+    const TILE = grid.icon;
     const btnRef = useRef<HTMLButtonElement>(null);
     const {
         background, glyph, art, radius, glyphSize, glyphWeight, boxShadow,
@@ -126,9 +128,9 @@ export function AppIcon({ app, label = true, onOpen, badge }: AppIconProps) {
 
             {showLabel && (
                 <span
-                    className="w-full truncate text-center font-sf text-[13px] font-semibold tracking-[0.01em] text-white"
+                    className={APP_LABEL_CLASS}
                     style={{
-                        textShadow: '0 0 2px rgba(0,0,0,0.9), 0 1px 3px rgba(0,0,0,0.95), 0 2px 6px rgba(0,0,0,0.5)',
+                        ...appLabelStyle(grid),
                         color:      labelColor,
                         fontWeight: labelWeight,
                     }}

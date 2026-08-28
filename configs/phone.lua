@@ -80,6 +80,13 @@ return {
     BlockWhileDead     = true,
     BlockWhileSwimming = true,
 
+    -- Whether an incoming call throws the whole phone onto the screen. Off, a
+    -- ringing phone shows the same closed-shell banner an alarm does, naming
+    -- the caller, and the player opens their phone when they want to answer.
+    -- On, the call screen takes over the moment the phone rings, which is how
+    -- this behaved before the banner existed.
+    OpenOnIncomingCall = false,
+
     -- The boot animation: your logo over a lit backdrop, played once when the
     -- resource starts and the player first opens their phone, never on ordinary
     -- opens after that. Off by default so an untouched install goes straight to

@@ -16,6 +16,7 @@ import { AccountSwitcher } from '@/shared/AccountSwitcher';
 import { MAIL_DOMAIN, accountsConfirmReset, accountsLogin, accountsLogout, accountsMe, accountsRegister, accountsRequestReset, accountsSavePassword, accountsSuggestCode, accountsSwitch } from '@/core/accountsApi';
 import { signOutAllForApp } from '@/shared/signOutAll';
 import { t } from '@/i18n';
+import { SlideOver } from '@/ui/SlideOver';
 import { ACCENT, type VLive, type VPost, type VProfile } from './data';
 import {
     apiAddView, apiCounts, apiDeletePost, apiFeed, apiLives, apiPost, apiProfile, apiToggleFollow,
@@ -315,36 +316,50 @@ export function Vibez({ onClose: _onClose }: { onClose: () => void }) {
             )}
 
             {profileHandle && (
-                <div className="absolute inset-0 z-20 bg-black animate-swipe-in-left">
-                    <Profile
-                        handle={profileHandle}
-                        onBack={() => setProfileHandle(null)}
-                        onOpenPost={openPostList}
-                        refreshKey={refreshKey}
-                    />
-                </div>
+                <SlideOver
+                    direction="soft"
+                    zIndex={20}
+                    className="bg-black"
+                    onClose={() => setProfileHandle(null)}
+                >
+                    {close => (
+                        <Profile
+                            handle={profileHandle}
+                            onBack={() => close()}
+                            onOpenPost={openPostList}
+                            refreshKey={refreshKey}
+                        />
+                    )}
+                </SlideOver>
             )}
 
             {viewer && (
-                <div
-                    className="absolute inset-x-0 top-0 z-30 animate-swipe-in-left bg-black"
+                <SlideOver
+                    direction="soft"
+                    zIndex={30}
+                    className="bg-black"
                     style={{ bottom: TAB_H }}
+                    onClose={() => setViewer(null)}
                 >
-                    <Feed
-                        posts={viewer.posts}
-                        myHandle={me?.username}
-                        handlers={handlers}
-                        initialIndex={viewer.index}
-                    />
-                    <button
-                        type="button"
-                        aria-label={t('vibez.back', 'Back')}
-                        onClick={() => setViewer(null)}
-                        className="absolute left-3 top-[58px] z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/40 backdrop-blur-sm active:opacity-70"
-                    >
-                        <ChevronLeft className="h-5 w-5 text-white" strokeWidth={2.6} />
-                    </button>
-                </div>
+                    {close => (
+                        <>
+                            <Feed
+                                posts={viewer.posts}
+                                myHandle={me?.username}
+                                handlers={handlers}
+                                initialIndex={viewer.index}
+                            />
+                            <button
+                                type="button"
+                                aria-label={t('vibez.back', 'Back')}
+                                onClick={() => close()}
+                                className="absolute left-3 top-[58px] z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/40 backdrop-blur-sm active:opacity-70"
+                            >
+                                <ChevronLeft className="h-5 w-5 text-white" strokeWidth={2.6} />
+                            </button>
+                        </>
+                    )}
+                </SlideOver>
             )}
 
             {commentsPost && (

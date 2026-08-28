@@ -12,6 +12,10 @@ local mailStore  = require 'server.mail.store'
 local store      = require 'server.admin.store'
 ---@type table Mute registry (server.admin.moderation): scope mutes + guards.
 local moderation = require 'server.admin.moderation'
+---@type table Watchlist queue (server.admin.flags): keyword sweep + triage.
+local flags      = require 'server.admin.flags'
+---@type table Recycle bin (server.admin.bin): pre-delete snapshots + restores.
+local bin        = require 'server.admin.bin'
 ---@type table Phone wipe (server.admin.wipe): full per-citizenid data wipe.
 local wipe       = require 'server.admin.wipe'
 ---@type table Birdy badge vocabulary (server.birdy.verify): allowlist + input parsing.
@@ -496,11 +500,20 @@ end
 function actions.birdyDeletePost(source, payload)
     local id = payload and payload.id
     if type(id) ~= 'string' or id == '' or #id > 16 then return fail('Missing post') end
+
+    local aCid, aName = adminIdent(source)
+
+    -- Copied out before the delete, like every other content delete: afterwards there is nothing
+    -- left to copy. Squawk carries its own bin source because it has no content adapter to hold one.
+    local kept = bin.keep('birdy', id, nil, aCid, aName)
+
     local removed = store.deleteBirdyPost(id)
     if removed == 0 then return fail('Post not found') end
-    local aCid, aName = adminIdent(source)
+    -- A queue entry pointing at a row that no longer exists is noise someone has to read to
+    -- dismiss, so removing the post retires its flags with it.
+    flags.clearFor('birdy', id)
     store.audit(aCid, aName, 'delete-birdy-post', nil, 'post ' .. id)
-    return ok()
+    return ok({ recoverable = kept })
 end
 
 ---Sets the verified badge on one Birdy account, addressed by handle: a character can hold
@@ -528,10 +541,10 @@ end
 ---photogram, cherry, marketplace, pages). Author names resolve like everywhere else.
 ---@param source number admin player server id
 ---@param payload { app?: string, cursor?: string, q?: string }|nil
----@return table envelope { items, nextCursor, deletable }
+---@return table envelope { items, nextCursor, deletable, threaded }
 function actions.content(source, payload)
     local app = payload and payload.app
-    local known, deletable = store.contentInfo(type(app) == 'string' and app or '')
+    local known, deletable, threaded = store.contentInfo(type(app) == 'string' and app or '')
     if not known then return fail('Unknown app') end
 
     local q = util.trim(payload and payload.q)
@@ -549,7 +562,52 @@ function actions.content(source, payload)
             item.authorOnline = online[item.authorCid] == true
         end
     end
-    return ok({ items = items, nextCursor = nextCursor, deletable = deletable })
+    return ok({ items = items, nextCursor = nextCursor, deletable = deletable, threaded = threaded })
+end
+
+---What one content row expands into: replies under a post, or the room and conversation lines
+---around a message. Read-only; the same name resolution the list uses applies here too.
+---@param source number admin player server id
+---@param payload { app?: string, id?: string }|nil
+---@return table envelope { items, deletable }
+function actions.contentThread(source, payload)
+    local app = payload and payload.app
+    local known, _, threaded = store.contentInfo(type(app) == 'string' and app or '')
+    if not known or not threaded then return fail('That content has no thread') end
+    local id = payload and payload.id
+    if (type(id) ~= 'string' and type(id) ~= 'number') or tostring(id) == '' then return fail('Missing id') end
+
+    local items = store.contentThread(app, tostring(id))
+
+    local cids = {}
+    for _, item in ipairs(items) do
+        if item.authorCid then cids[#cids + 1] = item.authorCid end
+    end
+    local names, online = resolveNames(cids)
+    for _, item in ipairs(items) do
+        if item.authorCid then
+            item.authorName   = names[item.authorCid]
+            item.authorOnline = online[item.authorCid] == true
+        end
+    end
+    return ok({ items = items, deletable = store.threadDeletable(app) })
+end
+
+---Deletes one row inside a thread: a Photogram or Clout comment, or a single Dark Chat line.
+---@param source number admin player server id
+---@param payload { app?: string, id?: string }|nil
+---@return table envelope
+function actions.contentThreadDelete(source, payload)
+    local app = payload and payload.app
+    local known = store.contentInfo(type(app) == 'string' and app or '')
+    if not known or not store.threadDeletable(app) then return fail('That can\'t be deleted') end
+    local id = payload and payload.id
+    if (type(id) ~= 'string' and type(id) ~= 'number') or tostring(id) == '' then return fail('Missing id') end
+
+    if store.deleteThreadItem(app, tostring(id)) == 0 then return fail('Not found') end
+    local aCid, aName = adminIdent(source)
+    store.audit(aCid, aName, 'delete-comment', nil, ('%s %s'):format(app, tostring(id)))
+    return ok()
 end
 
 ---Deletes one content row from an app that allows it (darkchat message, photogram post,
@@ -564,10 +622,111 @@ function actions.contentDelete(source, payload)
     local id = payload and payload.id
     if (type(id) ~= 'string' and type(id) ~= 'number') or tostring(id) == '' then return fail('Missing id') end
 
-    if store.deleteContent(app, tostring(id)) == 0 then return fail('Not found') end
     local aCid, aName = adminIdent(source)
+
+    -- Copied out before the delete, never after: the row is what a restore writes back, and a
+    -- moment later there is nothing left to copy.
+    local kept = bin.keep(app, tostring(id), nil, aCid, aName)
+
+    if store.deleteContent(app, tostring(id)) == 0 then return fail('Not found') end
+    -- A queue entry pointing at a row that no longer exists is noise someone has to read to
+    -- dismiss, so removing the content retires its flags with it.
+    flags.clearFor(app, tostring(id))
     store.audit(aCid, aName, 'delete-content', nil, ('%s %s'):format(app, tostring(id)))
+    return ok({ recoverable = kept })
+end
+
+---One page of the recycle bin: what admins have deleted, and what can be put back.
+---@param source number admin player server id
+---@param payload { cursor?: number }|nil
+---@return table envelope { entries, nextCursor }
+function actions.bin(source, payload)
+    local entries, nextCursor = bin.list(tonumber(payload and payload.cursor), PAGE)
+
+    local cids = {}
+    for _, e in ipairs(entries) do
+        if e.authorCid then cids[#cids + 1] = e.authorCid end
+    end
+    local names, online = resolveNames(cids)
+    for _, e in ipairs(entries) do
+        if e.authorCid then
+            e.authorName   = names[e.authorCid]
+            e.authorOnline = online[e.authorCid] == true
+        end
+    end
+    return ok({ entries = entries, nextCursor = nextCursor })
+end
+
+---Puts one deleted row back where it came from.
+---@param source number admin player server id
+---@param payload { id?: number }|nil
+---@return table envelope
+function actions.binRestore(source, payload)
+    local id = tonumber(payload and payload.id)
+    if not id then return fail('Missing entry') end
+
+    local aCid, aName = adminIdent(source)
+    local okRestore, err = bin.restore(id, aName)
+    if not okRestore then return fail(err or 'Restore failed') end
+
+    store.audit(aCid, aName, 'restore-content', nil, 'bin entry ' .. id)
     return ok()
+end
+
+---@type table<string, true> Statuses a flag may be moved to.
+local FLAG_STATUS = { open = true, actioned = true, dismissed = true }
+
+---One page of the watchlist queue, newest first, with player names attached.
+---@param source number admin player server id
+---@param payload { status?: string, cursor?: number }|nil
+---@return table envelope { flags, nextCursor, openCount }
+function actions.flags(source, payload)
+    local status = payload and payload.status
+    if status == 'all' or not FLAG_STATUS[status] then status = nil end
+
+    local rows, nextCursor = flags.list(status, tonumber(payload and payload.cursor), PAGE)
+
+    local cids = {}
+    for _, f in ipairs(rows) do
+        if f.authorCid then cids[#cids + 1] = f.authorCid end
+    end
+    local names, online = resolveNames(cids)
+    for _, f in ipairs(rows) do
+        if f.authorCid then
+            f.authorName   = names[f.authorCid]
+            f.authorOnline = online[f.authorCid] == true
+        end
+    end
+    return ok({ flags = rows, nextCursor = nextCursor, openCount = flags.openCount() })
+end
+
+---Runs the keyword sweep now rather than waiting for the timer. Read-only against every app it
+---reads; all it can do is file queue entries.
+---@param source number admin player server id
+---@return table envelope { filed, scanned, openCount }
+function actions.flagsScan(source)
+    local okSweep, filed, scanned = pcall(flags.sweep)
+    if not okSweep then return fail('Scan failed') end
+
+    local aCid, aName = adminIdent(source)
+    store.audit(aCid, aName, 'flags-scan', nil, ('%d filed from %d rows'):format(filed, scanned))
+    return ok({ filed = filed, scanned = scanned, openCount = flags.openCount() })
+end
+
+---Marks one flag actioned or dismissed, or puts it back in the queue.
+---@param source number admin player server id
+---@param payload { id?: number, status?: string }|nil
+---@return table envelope { openCount }
+function actions.flagResolve(source, payload)
+    local id = tonumber(payload and payload.id)
+    local status = payload and payload.status
+    if not id then return fail('Missing flag') end
+    if not FLAG_STATUS[status] then return fail('Unknown status') end
+
+    local aCid, aName = adminIdent(source)
+    if flags.resolve(id, status, aCid, aName) == 0 then return fail('Not found') end
+    store.audit(aCid, aName, 'flag-' .. status, nil, 'flag ' .. id)
+    return ok({ openCount = flags.openCount() })
 end
 
 ---One player's messages, read-only, paginated.
@@ -678,19 +837,65 @@ end
 
 ---Audit log, read-only, paginated.
 ---@param source number admin player server id
----@param payload { cursor?: number }|nil
+---@param payload { cursor?: number, q?: string, action?: string }|nil
 ---@return table envelope { entries, nextCursor }
 function actions.audit(source, payload)
-    local entries, nextCursor = store.listAudit(tonumber(payload and payload.cursor), PAGE)
+    local q = util.trim(payload and payload.q)
+    if q == '' then q = nil end
+    local entries, nextCursor = store.listAudit(
+        tonumber(payload and payload.cursor), PAGE, q, payload and payload.action)
     return ok({ entries = entries, nextCursor = nextCursor })
 end
 
+---Every image and clip posted across the phone's apps, newest first.
+---@param source integer admin server id
+---@param payload table|nil { limit?: integer }
+---@return table result { media }
+function actions.media(source, payload)
+    payload = type(payload) == 'table' and payload or {}
+    return ok({ media = store.mediaWall(tonumber(payload.limit)) })
+end
+
+---Where every online player is right now, for the admin map. Positions come from the live entity
+---rather than any table, so this is a snapshot and never a history - nothing about it is stored.
+---@param source integer admin server id
+---@return table result { players }
+function actions.livePositions(source)
+    local out = {}
+    for _, src in ipairs(GetPlayers()) do
+        local id  = tonumber(src)
+        local ped = id and GetPlayerPed(id)
+        if ped and ped ~= 0 then
+            local pos = GetEntityCoords(ped)
+            out[#out + 1] = {
+                source = id,
+                name   = player.getName(id),
+                cid    = player.getIdentifier(id),
+                x      = math.floor(pos.x + 0.5),
+                y      = math.floor(pos.y + 0.5),
+            }
+        end
+    end
+    return ok({ players = out })
+end
+
 ---Dashboard stats: table counts + live online player count.
----@param source number admin player server id
+---@param source integer admin server id
 ---@return table envelope
 function actions.stats(source)
     local stats = store.stats()
     stats.online = #GetPlayers()
+
+    local okFlags, open = pcall(flags.openCount)
+    stats.openFlags = okFlags and open or 0
+
+    -- Charts are best-effort: a failure here costs the sparklines, never the counters above.
+    local okTrends, trends, days = pcall(store.trends)
+    if okTrends then
+        stats.trends = trends
+        stats.days   = days
+    end
+
     return ok(stats)
 end
 

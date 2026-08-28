@@ -312,7 +312,11 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
         if (!el) return;
         const ro = new ResizeObserver((entries) => {
             const r = entries[0]?.contentRect;
-            if (r) setVp({ w: Math.round(r.width), h: Math.round(r.height) });
+            if (!r) return;
+            const w = Math.round(r.width);
+            const h = Math.round(r.height);
+            if (w === 0 || h === 0) return;
+            setVp(prev => (prev.w === w && prev.h === h ? prev : { w, h }));
         });
         ro.observe(el);
         return () => ro.disconnect();

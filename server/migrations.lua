@@ -45,6 +45,7 @@ local COLUMNS = {
         island_pet        = 'island_pet VARCHAR(16) NULL',
         device            = "device VARCHAR(16) NOT NULL DEFAULT 'phone'",
         home_density      = 'home_density VARCHAR(12) NULL',
+        home_icon_scale   = 'home_icon_scale SMALLINT NULL',
     },
 
     -- Verification tier shown next to a handle: blue (individual), gold (business), grey

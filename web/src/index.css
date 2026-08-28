@@ -684,6 +684,16 @@ input[type='number'] {
     to   { transform: translateY(100%); }
 }
 
+@keyframes swipe-in-soft {
+    from { opacity: 0; transform: translateX(-48px); }
+    to   { opacity: 1; transform: translateX(0);     }
+}
+
+@keyframes swipe-out-soft {
+    from { opacity: 1; transform: translateX(0);     }
+    to   { opacity: 0; transform: translateX(-48px); }
+}
+
 @keyframes ios-sheet-backdrop-in {
     from { opacity: 0; }
     to   { opacity: 1; }
@@ -939,3 +949,25 @@ input[type='number'] {
     from { transform: translateY(0); }
     to   { transform: translateY(9px); }
 }
+
+@keyframes call-minimise {
+    from { opacity: 1; transform: scale(1);    }
+    to   { opacity: 0; transform: scale(0.36); }
+}
+@keyframes call-restore {
+    from { opacity: 0; transform: scale(0.36); }
+    to   { opacity: 1; transform: scale(1);    }
+}
+.call-minimise,
+.call-restore {
+    transform-origin: 50% 5%;
+    will-change: transform, opacity;
+}
+.call-minimise { animation: call-minimise 0.30s cubic-bezier(0.32, 0.72, 0, 1) both; }
+.call-restore  { animation: call-restore  0.38s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+    .call-minimise,
+    .call-restore { animation-duration: 0.01ms; }
+}
+

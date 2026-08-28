@@ -77,10 +77,17 @@ local landscape = false
 local color = config.Phone.DefaultColor or 'black'
 ---@type integer|nil Handle of the attached phone prop, nil while stowed.
 local prop
+---@type integer Bumped by every weld and every removal. Welding streams the model, which yields,
+---so a weld can finish after another has replaced it or after the phone was put away; comparing
+---this tells it to delete what it built rather than orphan a prop nothing tracks.
+local weldSeq = 0
 ---@type boolean True while a text field in the phone has focus
 local typing = false
 ---@type boolean True while a call is live, whether it is still ringing out or already connected.
 local inCall = false
+---@type boolean True while the call's own screen is what the phone is showing. False once it has
+---been minimised away, which is the one case where a live call is not held to the ear.
+local callUi = true
 ---@type table<integer, true> Prop models this client has already failed to stream.
 local unavailableModels = {}
 
@@ -112,9 +119,12 @@ local function currentClip()
         action = landscape and 'landscape' or 'camera'
     elseif typing then
         action = "typing"
-    elseif inCall then
+    elseif inCall and (callUi or not phoneOpen) then
         -- A live call outranks the reading pose whether the phone is on screen or stowed, so the
-        -- ped keeps it at their ear for the whole call instead of only while the UI is up.
+        -- ped keeps it at their ear for the whole call instead of only while the UI is up. The
+        -- exception is a call that has been minimised away to use another app: reading the screen
+        -- with the phone still at the ear is the one combination that never looks right. Stowing
+        -- the phone while minimised puts it straight back, since only an open phone can be read.
         action = 'call'
     end
     return CLIPS[action][IsPedInAnyVehicle(cache.ped, true) and 'inCar' or 'onFoot']
@@ -164,15 +174,52 @@ function pose.createProp(ped, frame, wide)
 end
 
 ---Attaches our own hand prop in the current frame colour and grip. No-op if one is already
----attached or the model won't stream.
+---attached, and a weld superseded or stowed while streaming deletes what it built.
 ---@param ped integer player ped handle
 local function attachProp(ped)
     if prop and DoesEntityExist(prop) then return end
-    prop = pose.createProp(ped, color, landscape)
+
+    weldSeq = weldSeq + 1
+    local seq = weldSeq
+    local obj = pose.createProp(ped, color, landscape)
+    if not obj then return end
+
+    if seq ~= weldSeq or not pose.shouldHold() or (prop and DoesEntityExist(prop)) then
+        DeleteObject(obj)
+        return
+    end
+    prop = obj
 end
 
----Delete the attached phone prop, if any. Idempotent.
+---Puts the pose and prop the player is holding right now onto ANOTHER ped.
+---
+---For the stand-in the MDT leaves behind while a dispatcher watches a camera: the officer is stood
+---there reading their phone, so the copy has to be stood there reading one too rather than
+---appearing empty-handed the moment somebody opens a feed.
+---
+---The prop is handed back rather than tracked here, because it belongs to the ped the caller owns
+---and has to be deleted with it. This module only ever tracks the player's own.
+---@param ped integer the ped to put the pose on
+---@return integer|nil prop the prop welded to it, for the caller to delete
+function pose.mirrorOnto(ped)
+    if not pose.shouldHold() then return nil end
+    if not ped or ped == 0 or not DoesEntityExist(ped) then return nil end
+
+    local clip = currentClip()
+    if pcall(lib.requestAnimDict, clip.dict, 1000) then
+        -- A plain looping FULL BODY clip, not the upper-body secondary the player gets. That one
+        -- blends over whatever the ped is already doing, and a stand-in that has just been cloned
+        -- and stood still has nothing underneath for it to blend onto, so it barely reads at all.
+        TaskPlayAnim(ped, clip.dict, clip.anim, clip.blendIn, clip.blendOut, -1, 1, 0.0, false, false, false)
+        RemoveAnimDict(clip.dict)
+    end
+
+    return pose.createProp(ped, color, landscape)
+end
+
+---Delete the attached phone prop, if any. Idempotent, and cancels any weld still streaming.
 function pose.removeProp()
+    weldSeq = weldSeq + 1
     if prop and DoesEntityExist(prop) then DeleteObject(prop) end
     prop = nil
 end
@@ -220,12 +267,13 @@ function pose.stop()
 end
 
 ---Mirrors the phone's state, then starts or stops the pose to match it.
----@param state { open: boolean, torch: boolean, camera: boolean, color: string, typing: boolean, call: boolean }
+---@param state { open: boolean, torch: boolean, camera: boolean, color: string, typing: boolean, call: boolean, callUi: boolean }
 function pose.refresh(state)
     phoneOpen = state.open and true or false
     torchOn   = state.torch and true or false
     cameraOn  = state.camera and true or false
     inCall    = state.call and true or false
+    callUi    = state.callUi ~= false
     color     = state.color or color
     if state.typing ~= nil then typing = state.typing and true or false end
     if not phoneOpen then typing = false end

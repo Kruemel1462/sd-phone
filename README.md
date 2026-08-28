@@ -13,7 +13,7 @@ Unlock it, rearrange the home screen, install apps from the App Store, open the 
 
 ---
 
-**An iOS-themed smartphone for FiveM.** that supports QBOX, QBCORE and ESX, with experimental ox_core support. 49 server-backed apps, real app accounts, a live game-view camera and online multiplayer games. Ships its own custom phone props: eight phone items in eight colours, each tinting both the on-screen frame and the custom prop model held in hand. A unique phone system as well as sim cards can be enabled!
+**An iOS-themed smartphone for FiveM.** that supports QBOX, QBCORE, ESX, ox_core and ND. 49 server-backed apps, real app accounts, a live game-view camera and online multiplayer games. Ships its own custom phone props: eight phone items in eight colours, each tinting both the on-screen frame and the custom prop model held in hand. A unique phone system as well as sim cards can be enabled!
 
 **A drop-in lb-phone replacement.** Scripts and custom apps written against lb-phone's exports and events keep running unmodified, and a first-boot migration carries your players across rather than resetting them: phone numbers and lock passcodes, contacts, blocked numbers, call history, SMS threads including groups and reactions, photos and albums, notes, phone settings, mail accounts with their inboxes, wallet transaction history, voice memos, Photogram and Birdy accounts with their posts, stories, DMs and followers, and the app logins themselves, so players open the phone already signed in.
 
@@ -24,7 +24,7 @@ If sd-phone is useful to you, please ⭐ the repo. Issues and pull requests are 
 [![Discord](https://img.shields.io/discord/842045164951437383?label=Discord&logo=discord&logoColor=white)](https://discord.gg/FzPehMQaBQ)
 [![Documentation](https://img.shields.io/badge/Docs-docs.samueldev.shop-94DD0C)](https://docs.samueldev.shop/resources/phone/)
 
-![Framework](https://img.shields.io/badge/Framework-QBCore%20%7C%20QBox%20%7C%20ESX%20%7C%20ox__core%20(beta)-3b82f6)
+![Framework](https://img.shields.io/badge/Framework-QBCore%20%7C%20QBox%20%7C%20ESX%20%7C%20ox__core%20(beta)%20%7C%20ND%20(beta)-3b82f6)
 ![Voice](https://img.shields.io/badge/Voice-pma--voice-3b82f6)
 ![Compatibility](https://img.shields.io/badge/lb--phone-drop--in%20compatible-3b82f6)
 
@@ -96,7 +96,7 @@ The Camera, Photos and Voice Memos apps need somewhere to store what they captur
 | **Communication** | Phone (1:1, group and company calls over pma-voice, SaltyChat or YaCA), Messages (SMS, group threads, GIFs, money and location cards), Mail (multi-account, global inboxes), Groups, Dark Chat, Radio, Find Friends |
 | **Social** | Photogram (posts, stories, DMs, real live video streaming), Birdy, Cherry, Vibez, Streaks, all on a shared accounts engine with registration, sign-in, and password resets delivered in-game |
 | **Camera & media** | Camera (live game view: photos, video with voice capture, selfie mode), Photos, Music (with AirShare library sharing), Voice Memos |
-| **World** | Maps (CDN-streamed tiles, routing, pins), Garages, Homes, Wallet, Services (company directory, dispatch messaging, phone multijob), Ryde (player-to-player ride hailing), Weazel News, Pages, Marketplace, Review, Weather, Stocks |
+| **World** | Maps (CDN-streamed tiles, routing, pins), Garages, Homes, Wallet, Services (company directory, dispatch messaging, phone multijob), Ryde (player-to-player ride hailing), Weazel News, Pages, Marketplace, Weather, Stocks |
 | **Games** | Chess, Connect Four, Battleship and Wordle with online lobbies, plus Blackjack, Cookie, Flappy, Blocks, Climber and Rail Runner with server-side leaderboards |
 | **Utilities** | Clock (alarms), Calendar, Notes (with sketches), Calculator, Compass, Health, Passwords, App Store, Settings |
 
@@ -155,6 +155,8 @@ after: [github.com/Samuels-Development/sd-tablet](https://github.com/Samuels-Dev
 - **Deep world integration.** Garages and Homes bridge across ten-plus garage and housing systems; Wallet reads your framework bank; Services maps jobs to callable, messageable companies; Weather mirrors the in-game sky.
 - **Custom apps.** Other resources can put their own apps on the phone: one export call turns any webpage into an installable app with icons, badges, notifications, popups and an App Store listing. Custom apps built for lb-phone run unmodified. Start from the [app templates](https://github.com/Samuels-Development/sd-phone-app-templates) (plain JS, React JS/TS, Vue 3, Svelte 5) and the [custom app guide](https://docs.samueldev.shop/resources/phone/custom-apps).
 - **lb-phone drop-in compatibility.** Third-party scripts written against lb-phone's exports and events keep working unmodified, and a one-command migrator imports lb-phone player data. See the [compatibility docs](https://docs.samueldev.shop/resources/phone/lb-phone-compatibility).
+- **YSeries drop-in compatibility.** Scripts written against the YSeries (teamsgg.dev) phone keep working too: all 96 of its client and server exports answer, its admin commands are registered, its social and gallery events are mirrored, and its call state is published to the same player state bags YSeries uses. Company balances, on-duty state, screen damage and streamer mode have no sd-phone equivalent and warn once rather than failing silently.
+- **qs-smartphone, gksphone and roadphone compatibility.** Scripts written against Quasar's qs-smartphone (including the PRO and Lite names), GKSHOP's gksphone, or RoadShop's roadphone keep working too. Every documented export is answered - 82, 123 and 215 names respectively - with their events mirrored and their admin commands registered. Anything sd-phone has no equivalent for warns once with the reason instead of failing silently.
 
 ## For developers
 
@@ -180,9 +182,9 @@ end)
 
 | Layer | Supported |
 |---|---|
-| Frameworks | QBCore, QBox, ESX (auto-detected). ox_core is supported but **experimental** |
-| Inventories | ox_inventory, tgiann-inventory, qb-inventory, qs-inventory(-pro), origen_inventory, codem-inventory, jaksam_inventory, lj-inventory, ps-inventory |
-| Voice | pma-voice, SaltyChat, YaCA (auto-detected) |
+| Frameworks | QBCore, QBox, ESX, ox_core, ND (auto-detected) |
+| Inventories | ox_inventory, one_inventory, tgiann-inventory, qb-inventory, qs-inventory(-pro), origen_inventory, codem-inventory, jaksam_inventory, lj-inventory, ps-inventory |
+| Voice | pma-voice |
 | Housing | 9 housing systems for the Homes app |
 | Garages | 10 garage systems for the Garages app |
 | Notify | ox_lib (default), lation_ui (opt-in), framework-native fallback |

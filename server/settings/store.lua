@@ -102,6 +102,7 @@ function store.ensureSchema()
             icon_custom        LONGTEXT     NULL,
             show_app_names     TINYINT(1)   NOT NULL DEFAULT 1,
             home_density       VARCHAR(12)  NULL,
+            home_icon_scale    SMALLINT     NULL,
             ringtone_volume    TINYINT UNSIGNED NULL,
             call_volume        TINYINT UNSIGNED NULL,
             locale             VARCHAR(8)   NULL,
@@ -973,6 +974,29 @@ function store.setHomeDensity(citizenid, density, device)
         INSERT INTO phone_settings (citizenid, device, home_density) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE home_density = VALUES(home_density)
     ]], { citizenid, device, density })
+end
+
+---Persist the home screen icon scale, leaving other settings intact.
+---
+---Stored as a WHOLE PERCENT rather than the fraction the UI works in, because the column is an
+---integer and a float would come back off by a rounding error every time. The bounds match the
+---slider's, so a client cannot park a size the grid would refuse to render.
+---@param citizenid string framework per-character id
+---@param scale any client-supplied fraction, 0.85 to 1.15
+---@param device string|nil 'phone' | 'tablet'
+function store.setHomeIconScale(citizenid, scale, device)
+    device = device or 'phone'
+    if not citizenid or citizenid == '' then return end
+
+    local n = tonumber(scale)
+    if not n or n ~= n then return end
+    local pct = lib.math.round(n * 100)
+    if pct < 85 or pct > 115 then return end
+
+    MySQL.update.await([[
+        INSERT INTO phone_settings (citizenid, device, home_icon_scale) VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE home_icon_scale = VALUES(home_icon_scale)
+    ]], { citizenid, device, pct })
 end
 
 ---Clamps a 0-100 slider value to an integer; nil for non-numbers and NaN, out-of-range values
@@ -2413,6 +2437,10 @@ function store.snapshot(citizenid, device)
     local homeDensity = row and row.home_density
     if type(homeDensity) ~= 'string' or not HOME_DENSITIES[homeDensity] then homeDensity = 'default' end
 
+    -- Stored as a whole percent, handed back as the fraction the UI works in.
+    local iconPct = row and tonumber(row.home_icon_scale)
+    local homeIconScale = (iconPct and iconPct >= 85 and iconPct <= 115) and (iconPct / 100) or 1
+
     -- Belt and braces against the TINYINT(1) boolean mapping: if a driver still hands this back
     -- as a boolean, `true` means the player asked for less motion, so read it as 'reduced'
     -- rather than letting tonumber() return nil and silently restoring full animation.
@@ -2446,6 +2474,7 @@ function store.snapshot(citizenid, device)
         customPalettes   = shared and decodeCustomPalettes(shared.palette_custom) or {},
         showAppNames     = showAppNames,
         homeDensity      = homeDensity,
+        homeIconScale    = homeIconScale,
         lockClock        = row and decodeColumn(row.lock_clock, nil) or nil,
         wallpaper        = (row and row.wallpaper ~= '') and row.wallpaper or nil,
         wallpaperHome    = (row and row.wallpaper_home ~= '') and row.wallpaper_home or nil,
