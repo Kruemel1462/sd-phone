@@ -65,6 +65,7 @@ function store.ensureSchema()
             installed_apps     TEXT         NULL,
             home_layout        TEXT         NULL,
             lock_clock         TEXT         NULL,
+            card_style         TEXT         NULL,
             wallpaper          VARCHAR(512) NULL,
             wallpaper_home     VARCHAR(512) NULL,
             blur_lock          TINYINT(1)   NULL,
@@ -169,7 +170,20 @@ function store.ensureSchema()
         MySQL.query.await('ALTER TABLE phone_settings MODIFY reduce_motion TINYINT NULL')
     end
 
-    MySQL.query.await([[
+    util.ensureColumns('phone_settings', {
+        card_style = 'card_style TEXT NULL',
+    })
+
+    local hasBankBrand = MySQL.scalar.await([[
+        SELECT COUNT(*) FROM information_schema.columns
+        WHERE table_schema = DATABASE() AND table_name = 'phone_settings'
+          AND COLUMN_NAME = 'bank_brand'
+    ]])
+    if tonumber(hasBankBrand) == 1 then
+        MySQL.query.await('ALTER TABLE phone_settings DROP COLUMN bank_brand')
+    end
+
+    util.ensureTable('phone_custom_ringtones', 'citizenid', [[
         CREATE TABLE IF NOT EXISTS phone_custom_ringtones (
             citizenid  VARCHAR(64)  NOT NULL,
             id         VARCHAR(32)  NOT NULL,
@@ -663,6 +677,42 @@ function store.setLockClock(citizenid, cfg, device)
         INSERT INTO phone_settings (citizenid, device, lock_clock) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE lock_clock = VALUES(lock_clock)
     ]], { citizenid, device, json.encode(clean) })
+end
+
+---Reads a player's saved bank-card style; nil when they have never customised it or the stored
+---JSON is unparseable.
+---@param citizenid string framework per-character id
+---@param device string|nil device scope, defaults to 'phone'
+---@return { bank: string|nil, color: string|nil, pattern: string|nil }|nil
+function store.getCardStyle(citizenid, device)
+    device = device or 'phone'
+    if not citizenid or citizenid == '' then return nil end
+    local row = MySQL.single.await('SELECT card_style FROM phone_settings WHERE citizenid = ? AND device = ?', { citizenid, device })
+    if not row or not row.card_style or row.card_style == '' then return nil end
+    local ok, decoded = pcall(json.decode, row.card_style)
+    if not ok or type(decoded) ~= 'table' then return nil end
+    return decoded
+end
+
+---Persists a player's bank-card style, storing only the three sanitised slugs.
+---@param citizenid string framework per-character id
+---@param style table { bank?: string, color?: string, pattern?: string }
+---@param device string|nil device scope, defaults to 'phone'
+---@return boolean stored false when no field survived sanitising
+function store.setCardStyle(citizenid, style, device)
+    device = device or 'phone'
+    if not citizenid or citizenid == '' or type(style) ~= 'table' then return false end
+    local clean = {
+        bank    = sanitizeSlug(style.bank),
+        color   = sanitizeSlug(style.color),
+        pattern = sanitizeSlug(style.pattern),
+    }
+    if not clean.bank and not clean.color and not clean.pattern then return false end
+    MySQL.update.await([[
+        INSERT INTO phone_settings (citizenid, device, card_style) VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE card_style = VALUES(card_style)
+    ]], { citizenid, device, json.encode(clean) })
+    return true
 end
 
 ---Validates a wallpaper image URL: http(s) scheme, no whitespace or control chars, within the

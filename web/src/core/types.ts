@@ -156,6 +156,7 @@ export interface HealthPayload {
     distanceM: number;
     heartRate: number;
     state:     'idle' | 'walking' | 'running' | 'sprinting' | 'vehicle' | 'dead';
+    pending?:  { steps: number; distanceM: number; activeMs: number };
 }
 
 interface GroupInvitePush {

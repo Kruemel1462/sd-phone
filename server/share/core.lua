@@ -57,6 +57,7 @@ local function kindLabel(kind)
     if kind == 'music-track'    then return 'song' end
     if kind == 'music-playlist' then return 'playlist' end
     if kind == 'document' then return 'document' end
+    if kind == 'photo'    then return 'photo' end
     if kind == 'signature-request' then return 'signature request' end
     return 'contact'
 end

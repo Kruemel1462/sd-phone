@@ -172,6 +172,12 @@ export async function apiDeletePhoto(photoId: string): Promise<boolean> {
     return r.success;
 }
 
+export async function apiSharePhoto(photoId: string, target: number): Promise<boolean> {
+    if (!isFiveM) return true;
+    const r = await apiCall<unknown>('sd-phone:photos:share', { id: photoId, target });
+    return r.success;
+}
+
 interface ServerAlbum { id: string; name: string; count: number; cover: string | null }
 
 export async function apiListAlbums(): Promise<Album[]> {

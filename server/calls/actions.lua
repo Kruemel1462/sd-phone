@@ -17,6 +17,9 @@ local service  = require 'server.service'
 ---@type table Voice backend (bridge.server.voice): call-channel membership and speakerphone over
 ---whichever voice script is running.
 local voice    = require 'bridge.server.voice'
+---@type table Shared ICE provisioning (server.voice.ice): the STUN + Cloudflare TURN set every
+---WebRTC feature uses, so one credential pair serves calls, the voice mesh, Live and bodycams.
+local ice      = require 'server.voice.ice'
 
 ---@type table Actions module; the table returned at end of file.
 local actions = {}
@@ -1336,11 +1339,13 @@ function actions.videoStop(src)
     if peer then TriggerClientEvent('sd-phone:client:call:video:stop', peer) end
 end
 
----Returns ICE servers for the browser RTCPeerConnection: Google STUN by default, plus a TURN
----relay when the sd_phone_turn_* convars are set.
+---Returns ICE servers for the browser RTCPeerConnection: the shared STUN + Cloudflare TURN set
+---every WebRTC feature uses, plus a static relay when the sd_phone_turn_* convars are set.
 ---@return { iceServers: table }
 function actions.iceConfig()
-    local servers = { { urls = 'stun:stun.l.google.com:19302' } }
+    local servers = {}
+    for _, entry in ipairs(ice.servers()) do servers[#servers + 1] = entry end
+
     local turn = GetConvar('sd_phone_turn_url', '')
     if turn ~= '' then
         servers[#servers + 1] = {

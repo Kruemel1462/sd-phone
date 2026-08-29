@@ -1,16 +1,17 @@
 import { t } from '@/i18n';
+import { bankBrand, cardColor, cardPattern, resolveStyle, type CardStyle } from './bankBrands';
 
-function Chip() {
+function Chip({ gradientId }: { gradientId: string }) {
     return (
         <svg width="44" height="34" viewBox="0 0 44 34" aria-hidden className="drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]">
             <defs>
-                <linearGradient id="fleeca-chip" x1="0" y1="0" x2="1" y2="1">
+                <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
                     <stop offset="0" stopColor="#F6E7B0" />
                     <stop offset="0.45" stopColor="#DDBC63" />
                     <stop offset="1" stopColor="#B28A24" />
                 </linearGradient>
             </defs>
-            <rect x="0.75" y="0.75" width="42.5" height="32.5" rx="6" fill="url(#fleeca-chip)" stroke="rgba(90,66,12,0.5)" strokeWidth="0.75" />
+            <rect x="0.75" y="0.75" width="42.5" height="32.5" rx="6" fill={`url(#${gradientId})`} stroke="rgba(90,66,12,0.5)" strokeWidth="0.75" />
             <g stroke="rgba(96,70,14,0.55)" strokeWidth="1.1" fill="none">
                 <path d="M0 12 H13 M31 12 H44 M0 22 H13 M31 22 H44 M14 0 V11 M14 23 V34 M30 0 V11 M30 23 V34" />
                 <rect x="14" y="11.5" width="16" height="11" rx="1.5" />
@@ -30,42 +31,58 @@ function Contactless({ size = 22 }: { size?: number }) {
     );
 }
 
-export function FleecaCard({ holder, last4, expiry }: { holder: string; last4: string; expiry: string }) {
+export function BankCard({ holder, last4, expiry, style }: {
+    holder: string;
+    last4:  string;
+    expiry: string;
+    style:  Partial<CardStyle> | null | undefined;
+}) {
+    const resolved = resolveStyle(style);
+    const bank     = bankBrand(resolved.bank);
+    const color    = cardColor(resolved.color);
+    const tile     = cardPattern(resolved.pattern);
+
+    const key    = `${resolved.bank}-${resolved.color}-${resolved.pattern}`;
+    const chipId = `chip-${key}`;
+    const waveId = `wave-${key}`;
+    const glowId = `glow-${key}`;
+
     return (
         <div
             className="relative mx-auto w-full max-w-[420px] select-none overflow-hidden rounded-[20px] font-sf text-white"
             style={{
                 aspectRatio: '1.586',
-                background: 'radial-gradient(125% 135% at 12% 8%, #1C8A60 0%, #0F6043 34%, #0A3F2D 68%, #062018 100%)',
-                boxShadow: '0 4px 14px rgba(4,40,28,0.22), inset 0 1px 0 rgba(255,255,255,0.14)',
+                background: color.background,
+                boxShadow: color.shadow,
+                contain: 'paint',
             }}
         >
             <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 320 202" preserveAspectRatio="none" aria-hidden>
                 <defs>
-                    <pattern id="fleeca-wave" width="38" height="11" patternUnits="userSpaceOnUse">
-                        <path d="M0 5.5 Q 9.5 0 19 5.5 T 38 5.5" fill="none" stroke="#CFF5E4" strokeWidth="0.5" />
+                    <pattern id={waveId} width={tile.w} height={tile.h} patternUnits="userSpaceOnUse">
+                        <path d={tile.d} fill="none" stroke={color.stroke} strokeWidth={tile.strokeWidth} />
                     </pattern>
-                    <radialGradient id="fleeca-rose" cx="0.82" cy="0.3" r="0.5">
-                        <stop offset="0" stopColor="#9BEFC9" stopOpacity="0.0" />
-                        <stop offset="0.7" stopColor="#9BEFC9" stopOpacity="0.10" />
-                        <stop offset="1" stopColor="#9BEFC9" stopOpacity="0" />
+                    <radialGradient id={glowId} cx="0.82" cy="0.3" r="0.5">
+                        <stop offset="0" stopColor={color.glow} stopOpacity="0.0" />
+                        <stop offset="0.7" stopColor={color.glow} stopOpacity="0.10" />
+                        <stop offset="1" stopColor={color.glow} stopOpacity="0" />
                     </radialGradient>
                 </defs>
-                <rect width="320" height="202" fill="url(#fleeca-wave)" opacity="0.14" />
-                <rect width="320" height="202" fill="url(#fleeca-rose)" />
+                <rect width="320" height="202" fill={`url(#${waveId})`} opacity={tile.opacity} />
+                <rect width="320" height="202" fill={`url(#${glowId})`} />
             </svg>
 
             <div className="pointer-events-none absolute inset-0" style={{ background: 'linear-gradient(150deg, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0) 38%), linear-gradient(0deg, rgba(0,0,0,0.22) 0%, rgba(0,0,0,0) 32%)' }} />
 
             <div className="absolute inset-x-0 top-0 flex items-start justify-between px-4 pt-[14px]">
-                <span className="text-[24px] font-extrabold leading-none tracking-[-0.02em]" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.4)' }}>Fleeca</span>
-                <div className="flex items-center gap-2 pt-0.5">
+                <span className="truncate pr-2 text-[24px] font-extrabold leading-none tracking-[-0.02em]" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.4)' }}>{bank.wordmark}</span>
+                <div className="flex shrink-0 items-center gap-2 pt-0.5">
                     <span className="text-white/65"><Contactless size={20} /></span>
                     <span className="text-[9px] font-bold uppercase tracking-[0.24em] text-white/55">{t('banking.debit', 'Debit')}</span>
                 </div>
             </div>
 
-            <div className="absolute left-4 top-[40%] -translate-y-1/2"><Chip /></div>
+            <div className="absolute left-4 top-[40%] -translate-y-1/2"><Chip gradientId={chipId} /></div>
 
             <div className="absolute inset-x-4 bottom-[34px]">
                 <div className="flex items-center gap-[14px]" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.4)' }}>

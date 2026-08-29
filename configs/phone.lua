@@ -114,6 +114,25 @@ return {
     -- the player for the length of the video call. Needs AllowMovement.
     AllowMovementInVideoCall = true,
 
+    -- Video calls send the picture peer-to-peer over WebRTC; the call audio stays on your voice
+    -- resource. Public STUN is always used, which is enough when both players share a network.
+    -- A TURN relay is what carries the picture between players on different home connections.
+    -- Without one they get a connected call with a black picture, while their own self-view
+    -- still looks fine, because the self-view never leaves their machine.
+    --
+    -- One TURN setup serves everything (video calls, nearby-voice capture, Live, bodycams).
+    -- Configure it once in configs/voice.lua; the free Cloudflare path is two convars:
+    --     set sd_cf_turn_token_id  "your-cloudflare-turn-token-id"
+    --     set sd_cf_turn_api_token "your-cloudflare-turn-api-token"
+    --
+    -- A fixed relay of your own (coturn, Metered) can be added for calls on top of that:
+    --     set sd_phone_turn_url        "turn:turn.example.com:3478"
+    --     set sd_phone_turn_username   "your-username"
+    --     set sd_phone_turn_credential "your-password"
+    --
+    -- Set this false to silence the boot warning if you deliberately run STUN-only.
+    WarnAboutTurn = true,
+
     -- Hold this key/button (while the phone is open) to free the mouse for
     -- camera rotation without closing the phone. Releasing it returns to the
     -- on-screen cursor. Combat stays suppressed, so you can look around but not

@@ -46,9 +46,9 @@ return {
     SelfHost = true,
 
     -- Which features may mint a token. A feature switched off here keeps working, it just keeps
-    -- working the old way, over the event bus.
+    -- working the old way, over the event bus. MDT bodycams are deliberately absent: the watching
+    -- terminal renders the officer's view in-engine, so no video is ever streamed or relayed.
     Features = {
-        Cameras       = true,   -- MDT bodycams and dashcams
         PhotogramLive = true,   -- Photogram Live broadcasts
         VibezLive     = true,   -- Vibez Live broadcasts
     },

@@ -9,6 +9,7 @@ proxyCallback('sd-phone:photos:list',        'sd-phone:server:photos:list')
 proxyCallback('sd-phone:photos:delete',      'sd-phone:server:photos:delete')
 proxyCallback('sd-phone:photos:setFavorite', 'sd-phone:server:photos:setFavorite')
 proxyCallback('sd-phone:photos:saveUrl',     'sd-phone:server:photos:saveUrl')
+proxyCallback('sd-phone:photos:share',       'sd-phone:server:photos:share')
 
 proxyCallback('sd-phone:albums:list',        'sd-phone:server:albums:list')
 proxyCallback('sd-phone:albums:create',      'sd-phone:server:albums:create')

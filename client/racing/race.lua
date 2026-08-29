@@ -353,6 +353,7 @@ local function plantStack(hash, x, y, z, out)
     for i = 0, GATE_STACK - 1 do
         local obj = CreateObject(hash, x + 0.0, y + 0.0, base + i * GATE_STACK_STEP, false, false, false)
         SetEntityAsMissionEntity(obj, true, true)
+        SetEntityCollision(obj, false, false)
         FreezeEntityPosition(obj, true)
         out[#out + 1] = obj
     end

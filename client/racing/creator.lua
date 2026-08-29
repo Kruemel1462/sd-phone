@@ -54,7 +54,7 @@ local KEY_WIDEN  = 175
 
 ---@type boolean True while the recorder owns the screen.
 local active = false
----@type { a: vector3, b: vector3, props: integer[], blip: integer }[] Placed gates in route order.
+---@type { a: vector3, b: vector3, center: vector3, props: integer[], blip: integer }[] Placed gates in route order.
 local gates = {}
 ---@type number Live gate width, in metres.
 local gateWidth = DEF_WIDTH
@@ -83,7 +83,7 @@ end
 
 ---The gate currently framing the player, or their vehicle when they are in one: an edge point
 ---either side, gateWidth apart, both snapped to the ground.
----@return { a: vector3, b: vector3 } gate
+---@return { a: vector3, b: vector3, center: vector3, props: integer[], blip: integer } gate
 local function currentGate()
     local ped = cache.ped
     local veh = GetVehiclePedIsIn(ped, false)
@@ -129,6 +129,7 @@ local function placeGate()
     gate.props = { spawnFlag(gate.a), spawnFlag(gate.b) }
 
     local center = (gate.a + gate.b) / 2
+    gate.center  = center
     local blip   = AddBlipForCoord(center.x, center.y, center.z)
     SetBlipSprite(blip, 1)
     SetBlipColour(blip, 5)
@@ -289,17 +290,18 @@ local function startCreator()
             drawGatePosts(ghost.a, ghost.b, 80, 230, 140, 110)
 
             local at = GetEntityCoords(cache.ped)
-            local previous
+            local previous, previousNear
             for i = 1, #gates do
                 local gate   = gates[i]
-                local center = (gate.a + gate.b) / 2
-                if #(at - center) < DRAW_RADIUS then
+                local center = gate.center or (gate.a + gate.b) / 2
+                local near   = #(at - center) < DRAW_RADIUS
+                if near then
                     DrawLine(gate.a.x, gate.a.y, gate.a.z + 1.5, gate.b.x, gate.b.y, gate.b.z + 1.5, 255, 255, 255, 90)
                 end
-                if previous then
+                if previous and (near or previousNear) then
                     DrawLine(previous.x, previous.y, previous.z + 1.0, center.x, center.y, center.z + 1.0, 255, 255, 255, 50)
                 end
-                previous = center
+                previous, previousNear = center, near
             end
 
             local text = buildTextUI()

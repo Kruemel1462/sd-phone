@@ -18,6 +18,15 @@ local M = {}
 
 local ready = 0
 local failures = {}
+---@type string[] Deferred setup warnings, printed with the summary so a module never has to
+---print on its own and race the rest of the boot output.
+local warnings = {}
+
+---Queues a configuration warning to print with the boot summary.
+---@param text string one line, printed verbatim after the summary
+function M.warn(text)
+    warnings[#warnings + 1] = text
+end
 
 ---Records a module's schema as bootstrapped.
 function M.schemaReady()
@@ -46,6 +55,24 @@ CreateThread(function()
 
     if #failures > 0 then
         print(('^1[sd-phone]^0 %d schema(s) failed: %s'):format(#failures, table.concat(failures, ', ')))
+    end
+
+    -- Tables another resource already owns under the same name. The statements against them are
+    -- skipped rather than fatal, so this line is the only thing standing between a half-built
+    -- schema and an owner who never finds out which table to rename.
+    local degraded = util.degraded()
+    if #degraded > 0 then
+        print(('^3[sd-phone]^0 %d table(s) degraded: %s'):format(#degraded, table.concat(degraded, ', ')))
+        print('^3[sd-phone]^0 these names are already used by another resource. Rename them (or drop them if unused) and restart.')
+    end
+
+    for _, line in ipairs(warnings) do print(line) end
+
+    local oxlib = version.ofResource('ox_lib')
+    if oxlib and version.isNewer(oxlib, OXLIB_FLOOR) then
+        print(('^3[sd-phone]^0 ox_lib v%s is older than the v%s this release is tested against.')
+            :format(oxlib, OXLIB_FLOOR))
+        print('^3[sd-phone]^0 update it before reporting a `nil value` error from a lib.* call.')
     end
 
     if not current then return end

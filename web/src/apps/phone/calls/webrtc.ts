@@ -40,15 +40,22 @@ export class CallPeer {
     private pc: RTCPeerConnection;
     private remote = new MediaStream();
     onRemote?: (stream: MediaStream) => void;
+    onRemoteLive?: () => void;
+    onFailed?: () => void;
 
     constructor(config: IceConfig, private initiator: boolean, private slot: PeerSlot = 'video') {
         this.pc = new RTCPeerConnection(config);
         this.pc.onicecandidate = (e) => {
             if (e.candidate) this.send({ kind: 'ice', candidate: e.candidate.toJSON() });
         };
+        this.pc.oniceconnectionstatechange = () => {
+            if (this.pc.iceConnectionState === 'failed') this.onFailed?.();
+        };
         this.pc.ontrack = (e) => {
             this.remote.addTrack(e.track);
             this.onRemote?.(this.remote);
+            if (e.track.muted) e.track.addEventListener('unmute', () => this.onRemoteLive?.(), { once: true });
+            else this.onRemoteLive?.();
         };
     }
 

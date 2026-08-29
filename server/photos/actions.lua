@@ -4,6 +4,8 @@ local config   = require 'configs.config'
 local player   = require 'bridge.server.player'
 ---@type table Photos persistence layer (server.photos.store): photo/album row CRUD.
 local store    = require 'server.photos.store'
+---@type table AirShare handshake (server.share.core): offers a payload to a nearby phone.
+local share    = require 'server.share.core'
 
 ---@type table Photos config (config.Photos): retention cap, album cap, name length bounds.
 local photosCfg = config.Photos
@@ -240,6 +242,51 @@ function actions.delete(source, photoId)
     ---Fires the first-party photos:deleted hook once per owner-initiated delete; server-local and synchronous.
     TriggerEvent('sd-phone:server:photos:deleted', { source = source, citizenid = cid, id = photoId, url = url })
     return ok({ id = photoId })
+end
+
+---Offers one of the caller's photos to a nearby phone. Sends only the hosted URL.
+---@param source number sender server id
+---@param target any recipient server id, client-chosen and validated by share.request
+---@param photoId any client-supplied photo row id
+---@return table result { success, message? }
+function actions.requestShare(source, target, photoId)
+    local cid = player.getIdentifier(source)
+    if not cid then return fail('Player not found') end
+    if type(photoId) ~= 'string' or photoId == '' then return fail('Photo id required') end
+
+    local url = store.urlFor(photoId, cid)
+    if not url then return fail('Photo not found') end
+
+    local sent, message = share.request(source, target, 'photo', { url = url })
+    if not sent then return fail(message or 'Could not send request') end
+    return ok({})
+end
+
+---Saves an accepted photo share into the recipient's gallery and pushes it live. Refused when
+---they already hold that exact URL.
+---@param targetSrc number recipient server id
+---@param payload { url: string } stored share payload
+---@return boolean delivered
+---@return string? reason shown to the recipient when refused
+function actions.deliverShare(targetSrc, payload)
+    local cid = player.getIdentifier(targetSrc)
+    if not cid then return false end
+
+    local url = type(payload) == 'table' and payload.url or nil
+    if type(url) ~= 'string' or url == '' then return false end
+    if store.hasUrl(cid, url) then return false, 'Already in your gallery' end
+
+    local id = store.newId()
+    if not store.insertPhoto(id, cid, url) then return false end
+    store.pruneOldest(cid, photosCfg.MaxPhotosPerPlayer)
+
+    TriggerClientEvent('sd-phone:client:photos:added', targetSrc, {
+        id        = id,
+        url       = url,
+        favorite  = false,
+        createdAt = os.date('!%Y-%m-%d %H:%M:%S'),
+    })
+    return true
 end
 
 ---Lists the caller's custom albums, each annotated with a photo count and a cover URL (newest

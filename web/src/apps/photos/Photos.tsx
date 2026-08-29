@@ -56,6 +56,7 @@ export function Photos({ onClose }: { onClose: () => void }) {
     const [viewer, setViewer] = useState<ViewerState | null>(null);
     const [albumPicker, setAlbumPicker] = useState<{ photoIds: string[] } | null>(null);
     const [confirmDelete, setConfirmDelete] = useState<{ ids: string[]; fromSelect: boolean } | null>(null);
+    const [confirmFavorite, setConfirmFavorite] = useState<{ ids: string[] } | null>(null);
     const [photoPicker, setPhotoPicker] = useState(false);
     const [createState, setCreateState] = useState<CreateState | null>(null);
 
@@ -263,6 +264,14 @@ export function Photos({ onClose }: { onClose: () => void }) {
     const isEmpty = !loading && photos.length === 0;
     const selectBarUp = tab === 'gallery' && gallerySelect;
 
+    const favoriteSummary = (() => {
+        if (!confirmFavorite) return null;
+        const set = new Set(confirmFavorite.ids);
+        const chosen = photos.filter(p => set.has(p.id));
+        const already = chosen.filter(p => p.favorite).length;
+        return { count: chosen.length, already, removing: chosen.length > 0 && already === chosen.length };
+    })();
+
     return (
         <div className="absolute inset-0 z-10 flex flex-col bg-base text-black dark:text-white">
             <div className="h-[54px] shrink-0" aria-hidden />
@@ -349,7 +358,7 @@ export function Photos({ onClose }: { onClose: () => void }) {
                         type="button"
                         tabIndex={selectBarUp ? undefined : -1}
                         disabled={gallerySelected.size === 0}
-                        onClick={() => favoritePhotos(Array.from(gallerySelected)).then(clearGallerySelection)}
+                        onClick={() => setConfirmFavorite({ ids: Array.from(gallerySelected) })}
                         className="flex flex-1 flex-col items-center gap-1.5 py-1 text-ios-blue disabled:opacity-40"
                     >
                         <Heart className="h-[31px] w-[31px]" strokeWidth={1.9} />
@@ -442,6 +451,33 @@ export function Photos({ onClose }: { onClose: () => void }) {
                     maxLength={40}
                     onCancel={() => setCreateState(null)}
                     onConfirm={(name) => void submitCreate(name)}
+                />
+            )}
+
+            {confirmFavorite && favoriteSummary && (
+                <AlertDialog
+                    title={favoriteSummary.removing
+                        ? t('photos.unfavouriteTitle', 'Remove from Favourites?')
+                        : t('photos.favouriteTitle', 'Add to Favourites?')}
+                    message={[
+                        favoriteSummary.removing
+                            ? (favoriteSummary.count === 1
+                                ? t('photos.unfavouriteOne', 'This photo will be removed from your Favourites.')
+                                : t('photos.unfavouriteMany', 'These {count} photos will be removed from your Favourites.', { count: favoriteSummary.count }))
+                            : (favoriteSummary.count === 1
+                                ? t('photos.favouriteOne', 'This photo will be added to your Favourites.')
+                                : t('photos.favouriteMany', 'These {count} photos will be added to your Favourites.', { count: favoriteSummary.count })),
+                        !favoriteSummary.removing && favoriteSummary.already > 0
+                            ? t('photos.alreadyFavourited', '{count} of these are already favourited.', { count: favoriteSummary.already })
+                            : '',
+                    ].filter(Boolean).join(' ')}
+                    confirmLabel={favoriteSummary.removing ? t('photos.remove', 'Remove') : t('photos.favourite', 'Favourite')}
+                    onCancel={() => setConfirmFavorite(null)}
+                    onConfirm={() => {
+                        const ids = confirmFavorite.ids;
+                        setConfirmFavorite(null);
+                        void favoritePhotos(ids).then(clearGallerySelection);
+                    }}
                 />
             )}
 

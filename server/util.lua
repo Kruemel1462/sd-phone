@@ -699,4 +699,53 @@ function util.pushMany(event, targets, ...)
     end
 end
 
+---@type string base64url alphabet, matching b64urlEncode in web/src/lib/waypointCode.ts.
+local WP_B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+
+---@type table<string, boolean> Pin glyphs decodeWaypoint accepts; anything else falls back to MapPin.
+local WP_ICONS = {
+    MapPin = true, Home = true, Star = true, Flag = true, Skull = true, DollarSign = true,
+    Car = true, Crosshair = true, Heart = true, Wrench = true, ShoppingCart = true, Fuel = true,
+}
+
+---base64url encode, unpadded.
+---@param data string
+---@return string
+local function b64url(data)
+    local out = {}
+    for i = 1, #data, 3 do
+        local a, b, c = data:byte(i, i + 2)
+        local n = a * 65536 + (b or 0) * 256 + (c or 0)
+        out[#out + 1] = table.concat({
+            WP_B64:sub((n >> 18) + 1, (n >> 18) + 1),
+            WP_B64:sub(((n >> 12) & 63) + 1, ((n >> 12) & 63) + 1),
+            b and WP_B64:sub(((n >> 6) & 63) + 1, ((n >> 6) & 63) + 1) or '',
+            c and WP_B64:sub((n & 63) + 1, (n & 63) + 1) or '',
+        })
+    end
+    return table.concat(out)
+end
+
+---Builds the shared-waypoint code a location message carries in its `wpCode` meta field. Mirrors
+---encodeWaypoint in web/src/lib/waypointCode.ts: an `SDW1:` prefix over base64url of { l,x,y,i,c }.
+---@param x number world x
+---@param y number world y
+---@param label string|nil pin label, capped at 40 chars by the decoder
+---@param icon string|nil one of WP_ICONS, default MapPin
+---@param color string|nil hex colour, default #5c6cf3
+---@return string|nil code nil when the position is not finite
+function util.waypointCode(x, y, label, icon, color)
+    x, y = tonumber(x), tonumber(y)
+    if not util.finite(x) or not util.finite(y) then return nil end
+
+    local text = util.trim(label)
+    return 'SDW1:' .. b64url(json.encode({
+        l = text ~= '' and text:sub(1, 40) or 'Shared location',
+        x = math.floor(x + 0.5),
+        y = math.floor(y + 0.5),
+        i = WP_ICONS[icon] and icon or 'MapPin',
+        c = type(color) == 'string' and color:match('^#%x%x%x+$') or '#5c6cf3',
+    }))
+end
+
 return util

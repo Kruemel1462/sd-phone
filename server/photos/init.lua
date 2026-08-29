@@ -13,6 +13,8 @@ local player   = require 'bridge.server.player'
 local mediaLimit = require 'server.photos.mediaLimit'
 ---@type table Shared server helpers (server.util): finite-number guard for the export boundary.
 local util     = require 'server.util'
+---@type table AirShare core (server.share.core): per-kind delivery handler registry.
+local share    = require 'server.share.core'
 
 ---@type string Kennung des Foto-Moduls. Wird beim Start in die Konsole geschrieben, damit auf
 ---einen Blick erkennbar ist, WELCHER Stand auf dem Server laeuft.
@@ -341,6 +343,15 @@ end)
 
 lib.callback.register('sd-phone:server:albums:photos', function(src, payload)
     return actions.listAlbumPhotos(src, payload and payload.albumId or '')
+end)
+
+-- Delivers an accepted photo AirShare into the recipient's gallery.
+share.registerHandler('photo', actions.deliverShare)
+
+---Offers a photo to a nearby phone; the recipient decides whether to accept it.
+lib.callback.register('sd-phone:server:photos:share', function(src, payload)
+    payload = type(payload) == 'table' and payload or {}
+    return actions.requestShare(src, payload.target, payload.id)
 end)
 
 ---Public export: exports['sd-phone']:getPhotos(source, opts). Reads a player's gallery, newest

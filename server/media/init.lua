@@ -27,7 +27,6 @@ local FEATURES = type(CFG.Features) == 'table' and CFG.Features or {}
 ---@type table<string, boolean> Feature ids switched off in the config, keyed on the id a feature
 ---registers under. Keyed on the disabled ones so a feature this file has never heard of is on.
 local FEATURE_OFF = {
-    ['mdt:cam']        = FEATURES.Cameras == false,
     ['photogram:live'] = FEATURES.PhotogramLive == false,
     ['vibez:live']     = FEATURES.VibezLive == false,
 }
@@ -285,7 +284,7 @@ end
 
 ---Whether one feature may mint tokens: the relay is up and the feature is not switched off in
 ---configs/media.lua. A feature id this module has never heard of counts as on.
----@param feature string '<app>:<kind>', e.g. 'mdt:cam'
+---@param feature string '<app>:<kind>', e.g. 'photogram:live'
 ---@return boolean enabled
 function media.featureEnabled(feature)
     if not resolve() then return false end
@@ -320,7 +319,7 @@ end
 ---`entitle` is handed the requesting source and the stream being asked for, and returns the grant
 ---to sign (`{ key, role, gen }`) or nil plus a refusal message. It runs the feature's own
 ---permission check: nothing in this module inspects a job, a duty state or a follower list.
----@param feature string '<app>:<kind>', e.g. 'mdt:cam'
+---@param feature string '<app>:<kind>', e.g. 'photogram:live'
 ---@param handler { entitle: fun(src: integer, req: { streamId: string, role: string }): table|nil, string|nil }
 function media.registerFeature(feature, handler)
     if type(feature) ~= 'string' or feature == '' then return end

@@ -15,18 +15,19 @@ Unlock it, rearrange the home screen, install apps from the App Store, open the 
 
 **An iOS-themed smartphone for FiveM.** that supports QBOX, QBCORE, ESX, ox_core and ND. 49 server-backed apps, real app accounts, a live game-view camera and online multiplayer games. Ships its own custom phone props: eight phone items in eight colours, each tinting both the on-screen frame and the custom prop model held in hand. A unique phone system as well as sim cards can be enabled!
 
-**A drop-in lb-phone replacement.** Scripts and custom apps written against lb-phone's exports and events keep running unmodified, and a first-boot migration carries your players across rather than resetting them: phone numbers and lock passcodes, contacts, blocked numbers, call history, SMS threads including groups and reactions, photos and albums, notes, phone settings, mail accounts with their inboxes, wallet transaction history, voice memos, Photogram and Birdy accounts with their posts, stories, DMs and followers, and the app logins themselves, so players open the phone already signed in.
+**A drop-in replacement for lb-phone, qs-smartphone, gksphone, roadphone and YSeries.** Scripts and custom apps written against any of them keep running unmodified: their exports answer and their events fire, so nothing has to be rewritten. And if you are coming from lb-phone or YSeries, a migration carries your players across rather than resetting them: their numbers, contacts, messages, mail, photos, wallet history and social accounts, right down to the app logins, so they open the phone already signed in.
 
 If sd-phone is useful to you, please ⭐ the repo. Issues and pull requests are always welcome.
 
 [![Release](https://img.shields.io/github/v/release/Samuels-Development/sd-phone?label=Release&logo=github)](https://github.com/Samuels-Development/sd-phone)
+[![Downloads](https://img.shields.io/github/downloads/Samuels-Development/sd-phone/total?label=Downloads&logo=github)](https://github.com/Samuels-Development/sd-phone/releases)
 [![Stars](https://img.shields.io/github/stars/Samuels-Development/sd-phone?label=Stars&logo=github)](https://github.com/Samuels-Development/sd-phone)
 [![Discord](https://img.shields.io/discord/842045164951437383?label=Discord&logo=discord&logoColor=white)](https://discord.gg/FzPehMQaBQ)
 [![Documentation](https://img.shields.io/badge/Docs-docs.samueldev.shop-94DD0C)](https://docs.samueldev.shop/resources/phone/)
 
 ![Framework](https://img.shields.io/badge/Framework-QBCore%20%7C%20QBox%20%7C%20ESX%20%7C%20ox__core%20(beta)%20%7C%20ND%20(beta)-3b82f6)
 ![Voice](https://img.shields.io/badge/Voice-pma--voice-3b82f6)
-![Compatibility](https://img.shields.io/badge/lb--phone-drop--in%20compatible-3b82f6)
+![Compatibility](https://img.shields.io/badge/Drop--in%20compatible-lb--phone%2C%20qs%2C%20gks%2C%20road%2C%20YSeries-3b82f6)
 
 [**Live demo**](https://fivem.samueldev.shop/phone) · [**Documentation**](https://docs.samueldev.shop/resources/phone/) · [**Store**](https://fivem.samueldev.shop) · [**Discord**](https://discord.gg/FzPehMQaBQ)
 
@@ -39,15 +40,20 @@ If sd-phone is useful to you, please ⭐ the repo. Issues and pull requests are 
 > no blatant issues with the phone as it stands today.
 >
 > The version number is not a warning about stability. It sits below 1.0.0 because 1.0.0 is
-> a scope target rather than a quality one: I want the initial 1.0.0 release to ship more
-> than what is here today, racing and MDTs among them. That is the only thing holding the
-> number back.
+> a scope target rather than a quality one: there is more I want in the initial 1.0.0 release
+> than what is here today. That is the only thing holding the number back.
 
 > [!IMPORTANT]
-> **Coming from lb-phone? Give the first boot time to finish.**
-> sd-phone imports your lb-phone data on its first-ever startup. On a large database that is not instant: a production import of **3.8 million rows took roughly 8 minutes**, and the server stays busy until it completes. The console prints the row count, a time estimate and per-domain progress, so you can tell it is working rather than hung. Let it run to the end.
+> **Coming from lb-phone or YSeries? Run the import when you are ready for it.**
+> Nothing is imported automatically. Open **`/phoneadmin` → Migration**: it previews what your old database actually holds, lets you pick what to bring across, and streams the run with a live log and an ETA.
 >
-> This only happens once. Every later restart skips the domains that are already imported, so normal startups are unaffected.
+> What comes across: phone numbers and lock passcodes, contacts, blocked numbers, call history, messages, mail, notes, photos and albums, voice memos, wallet history, classifieds, phone settings, and whichever social apps your old phone had (Birdy, Photogram, Cherry, Dark Chat, Weazel News, Clout) with their posts, DMs, followers and logins, so players open the phone already signed in.
+>
+> On a large database this is not instant. A production import of **3.8 million rows took roughly 8 minutes**, and the server stays busy until it finishes. Start it when that is acceptable, and let it run to the end.
+>
+> The import is idempotent and non-destructive: a marker table stops a domain running twice, every write is fill-only, and a player who already has sd-phone data is never overwritten. So it is safe to re-run, and safe to do in stages.
+>
+> Prefer it to happen by itself? Set `enabled = true` in `configs/migrate.lua` and it runs on the next boot instead. From the server console, `sdphone:migrate` starts a run, `sdphone:migrate dry` previews without writing, and adding `yseries` or `lbphone` picks the source (it otherwise detects whichever your database carries).
 
 > [!TIP]
 > **Want a tablet? Check out the companion tablet, [sd-tablet](https://github.com/Samuels-Development/sd-tablet).**
@@ -93,12 +99,13 @@ The Camera, Photos and Voice Memos apps need somewhere to store what they captur
 
 | | |
 |---|---|
-| **Communication** | Phone (1:1, group and company calls over pma-voice, SaltyChat or YaCA), Messages (SMS, group threads, GIFs, money and location cards), Mail (multi-account, global inboxes), Groups, Dark Chat, Radio, Find Friends |
-| **Social** | Photogram (posts, stories, DMs, real live video streaming), Birdy, Cherry, Vibez, Streaks, all on a shared accounts engine with registration, sign-in, and password resets delivered in-game |
+| **Communication** | Phone (1:1, group and company calls over pma-voice), Messages (SMS, group threads, GIFs, money and location cards), Mail (multi-account, global inboxes), Groups, Dark Chat, Radio, Find Friends |
+| **Social** | Photogram (posts, stories, DMs, real live video streaming), Birdy, Cherry, Clout (short-form video), Streaks, all on a shared accounts engine with registration, sign-in, and password resets delivered in-game |
 | **Camera & media** | Camera (live game view: photos, video with voice capture, selfie mode), Photos, Music (with AirShare library sharing), Voice Memos |
-| **World** | Maps (CDN-streamed tiles, routing, pins), Garages, Homes, Wallet, Services (company directory, dispatch messaging, phone multijob), Ryde (player-to-player ride hailing), Weazel News, Pages, Marketplace, Weather, Stocks |
-| **Games** | Chess, Connect Four, Battleship and Wordle with online lobbies, plus Blackjack, Cookie, Flappy, Blocks, Climber and Rail Runner with server-side leaderboards |
-| **Utilities** | Clock (alarms), Calendar, Notes (with sketches), Calculator, Compass, Health, Passwords, App Store, Settings |
+| **World** | Maps (CDN-streamed tiles, routing, pins), Garages, Homes, Bank, Services (company directory, dispatch messaging, phone multijob), Ryde (player-to-player ride hailing), Racing (race board with an in-game track creator, unlocked by a `racing_usb` item), Weazel News, Pages, Marketplace, Weather, Stocks |
+| **Games** | Casino (Slots, Roulette, Blackjack, Baccarat, Crash and Texas Hold'em on a shared chip balance), Chess, Connect Four, Battleship and Wordle with online lobbies, plus Cookie, Flappy, Blocks and Climber with server-side leaderboards |
+| **Job terminals** | MDT, EMS and DOJ, job-gated, with records, warrants, reports, a firearms registry, live CCTV, and bodycam and dashcam review. Off by default: set `Enabled = true` in `configs/mdt.lua`. Best on the bigger screen of [sd-tablet](https://github.com/Samuels-Development/sd-tablet) |
+| **Utilities** | Clock (alarms), Calendar, Notes (with sketches), Files (documents with multi-signer signing, sendable as mail attachments), Calculator, Compass, Health (daily stats and a server-wide steps leaderboard), Passwords, App Store, Settings |
 
 ## Home screen widgets
 
@@ -152,11 +159,9 @@ after: [github.com/Samuels-Development/sd-tablet](https://github.com/Samuels-Dev
 - **Real accounts engine.** Social apps use actual registration and login, with verification codes and password resets delivered by in-game mail or SMS. Accounts are global, not per-character-slot.
 - **Live game-view camera.** The Camera app renders the world into the phone screen in real time; video clips record your microphone and nearby players' voices.
 - **Photogram Live.** Stream real encoded video to other players' phones, with clean late-joins.
-- **Deep world integration.** Garages and Homes bridge across ten-plus garage and housing systems; Wallet reads your framework bank; Services maps jobs to callable, messageable companies; Weather mirrors the in-game sky.
+- **Deep world integration.** Garages and Homes bridge across 13 garage systems and 12 housing systems; Wallet reads your framework bank; Services maps jobs to callable, messageable companies; Weather mirrors the in-game sky.
 - **Custom apps.** Other resources can put their own apps on the phone: one export call turns any webpage into an installable app with icons, badges, notifications, popups and an App Store listing. Custom apps built for lb-phone run unmodified. Start from the [app templates](https://github.com/Samuels-Development/sd-phone-app-templates) (plain JS, React JS/TS, Vue 3, Svelte 5) and the [custom app guide](https://docs.samueldev.shop/resources/phone/custom-apps).
-- **lb-phone drop-in compatibility.** Third-party scripts written against lb-phone's exports and events keep working unmodified, and a one-command migrator imports lb-phone player data. See the [compatibility docs](https://docs.samueldev.shop/resources/phone/lb-phone-compatibility).
-- **YSeries drop-in compatibility.** Scripts written against the YSeries (teamsgg.dev) phone keep working too: all 96 of its client and server exports answer, its admin commands are registered, its social and gallery events are mirrored, and its call state is published to the same player state bags YSeries uses. Company balances, on-duty state, screen damage and streamer mode have no sd-phone equivalent and warn once rather than failing silently.
-- **qs-smartphone, gksphone and roadphone compatibility.** Scripts written against Quasar's qs-smartphone (including the PRO and Lite names), GKSHOP's gksphone, or RoadShop's roadphone keep working too. Every documented export is answered - 82, 123 and 215 names respectively - with their events mirrored and their admin commands registered. Anything sd-phone has no equivalent for warns once with the reason instead of failing silently.
+- **Drop-in compatibility.** Scripts written for lb-phone, qs-smartphone (including PRO and Lite), gksphone, roadphone or YSeries keep working unmodified: every documented export is answered and their events are mirrored. Anything sd-phone has no equivalent for warns once with the reason instead of failing silently. Player data from lb-phone and YSeries imports from `/phoneadmin` → Migration. See the [compatibility docs](https://docs.samueldev.shop/resources/phone/lb-phone-compatibility).
 
 ## For developers
 
@@ -185,8 +190,8 @@ end)
 | Frameworks | QBCore, QBox, ESX, ox_core, ND (auto-detected) |
 | Inventories | ox_inventory, one_inventory, tgiann-inventory, qb-inventory, qs-inventory(-pro), origen_inventory, codem-inventory, jaksam_inventory, lj-inventory, ps-inventory |
 | Voice | pma-voice |
-| Housing | 9 housing systems for the Homes app |
-| Garages | 10 garage systems for the Garages app |
+| Housing | 12 housing systems for the Homes app |
+| Garages | 13 garage systems for the Garages app, plus ND_Core as the fallback on ND |
 | Notify | ox_lib (default), lation_ui (opt-in), framework-native fallback |
 
 ## Installation
@@ -233,6 +238,8 @@ Ready-made ox_inventory definitions live in the [installation docs](https://docs
 
 Players can also open the phone with a keybind (<kbd>F1</kbd> by default), which still requires owning one of these items.
 
+The Racing app is unlocked separately by a `racing_usb` item, consumed on use. Drop the `requires` line from its row in `configs/apps.lua` to hand it to everyone instead.
+
 Running unique phones with physical SIM trays (`SimTray` in `configs/uniqueandsim.lua`, ox_inventory only)? Give every phone item a `buttons` entry so players can open its tray:
 
 ```lua
@@ -251,6 +258,44 @@ In `configs/server/apikeys.lua`:
 | --- | --- |
 | `FivemanageMedia` | **Required.** Camera, Photos and Voice Memos uploads. Create a free [Fivemanage](https://refer.fivemanage.com/samuel) token of type **Media**. Without it those apps open, but nothing uploads or saves. |
 | `Giphy` | Optional. The GIF picker in Messages. Free key from [developers.giphy.com](https://developers.giphy.com). |
+
+### 4. Video calls between networks (TURN)
+
+Video calls send the picture peer-to-peer over WebRTC, with the audio staying on your voice
+resource. A public STUN server is built in, which is enough when both players share a network.
+Two players on **different home connections need a TURN relay** to get a picture at all.
+
+Without one the symptom is easy to misread as a bug: the call connects, the timer runs, the audio
+works and your own self-view looks perfect, but the other person's side of the screen stays black.
+Nothing has crashed, the video simply has no route.
+
+**One setup covers everything**: video calls, nearby-voice capture in camera clips, Photogram Live
+and bodycams all share the same relay. The quickest route is Cloudflare's free TURN service, which
+sd-phone provisions for you. Create a TURN key at **Cloudflare dashboard, Realtime, TURN**, then put
+the two values in your `server.cfg`:
+
+```cfg
+set sd_cf_turn_token_id  "your-cloudflare-turn-token-id"
+set sd_cf_turn_api_token "your-cloudflare-turn-api-token"
+```
+
+These are convars rather than config entries so credentials never land in the repo. sd-phone mints
+short-lived credentials from them and refreshes automatically, so nothing expires on you.
+
+Prefer your own relay? A fixed TURN server works too, and can be used alongside the above:
+
+```cfg
+set sd_phone_turn_url        "turn:turn.example.com:3478"
+set sd_phone_turn_username   "your-username"
+set sd_phone_turn_credential "your-password"
+```
+
+Use this form for self-hosted [coturn](https://github.com/coturn/coturn) or a static-credential
+provider such as Metered. Note that Cloudflare and Twilio issue **expiring** credentials through an
+API, so their values cannot be pasted here; use the convar pair above for Cloudflare instead.
+
+sd-phone prints one reminder line at boot while no relay is configured; silence it with
+`WarnAboutTurn = false` in `configs/phone.lua`.
 
 ### Building from source
 
