@@ -1,8 +1,17 @@
 ---@type table Version bridge (bridge.server.version): manifest version + latest GitHub release.
 local version = require 'bridge.server.version'
+---@type table Shared server helpers (server.util): the degraded-table registry.
+local util = require 'server.util'
 
 ---@type string GitHub repo the update check reads releases from.
 local UPDATE_REPO = 'Samuels-Development/sd-phone'
+
+---@type string Oldest ox_lib this release is known to work against. Every ox_lib function
+---sd-phone calls predates 2025 apart from the string helpers, and those are filled in by
+---bridge/shared/oxcompat.lua when absent; v3.30.5 is the oldest release ox_lib still publishes.
+---Below this the phone may still run - the point is that a missing lib.* function otherwise
+---surfaces as "attempt to call a nil value" somewhere unrelated, with nothing naming ox_lib.
+local OXLIB_FLOOR = '3.30.5'
 
 ---@type integer Milliseconds between quiescence checks while modules bootstrap.
 local TICK_MS = 1000

@@ -1,1 +1,0 @@
-import{F as e,d as t,k as n,tn as r}from"./index-BNpZ2LLg.js";async function i(t){let{signedOut:i}=await n(t);return e([t]),r(`${t}:`),i}async function a(){let{signedOut:i}=await n();e(t);for(let e of t)r(`${e}:`);return i}export{a as n,i as t};
