@@ -13,6 +13,7 @@ import {
     acceptInvite, declineInvite, fetchJobs, removeJob, switchJob,
     type JobInvite, type JobsView, type SavedJob,
 } from './servicesApi';
+import { failText } from '@/core/api';
 
 type Scope = 'mine' | 'offers';
 
@@ -36,7 +37,7 @@ export function JobsTab({ onJobChanged }: { onJobChanged?: () => void }) {
         const res = await p;
         setBusy(false);
         if (res.success) { if (res.data) { cachedJobs = res.data; setView(res.data); } onJobChanged?.(); }
-        else setError(res.message ?? t('services.somethingWentWrong', 'Something went wrong'));
+        else setError(failText(res, t('services.somethingWentWrong', 'Something went wrong')));
     }, [busy, onJobChanged]);
 
     const jobs    = view?.jobs ?? [];
@@ -148,7 +149,7 @@ export function JobsTab({ onJobChanged }: { onJobChanged?: () => void }) {
                 <AlertDialog
                     title={t('services.removeLabel', 'Remove {label}?', { label: removing.label })}
                     message={removing.active
-                        ? t('services.removeMsgActive', "This is your active job — removing it will set you to unemployed. You'd need to be re-hired to get it back.")
+                        ? t('services.removeMsgActive', "This is your active job. Removing it will set you to unemployed. You'd need to be re-hired to get it back.")
                         : t('services.removeMsg', "This drops the job from your saved jobs. You'd need to be re-hired to get it back.")}
                     confirmLabel={t('services.remove', 'Remove')}
                     destructive
@@ -264,7 +265,7 @@ function Capacity({ count, max }: { count: number; max: number }) {
                 <span className="text-[15px] font-semibold uppercase tracking-wider text-ios-gray">{t('services.myJobs', 'My Jobs')}</span>
                 <span className={`text-[15px] font-semibold ${full ? 'text-ios-red' : 'text-ios-gray'}`}>{count} / {max}</span>
             </div>
-            <div className="mt-1.5 h-[5px] w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
+            <div className="mt-1.5 h-[5px] w-full overflow-hidden rounded-full bg-hairline/10">
                 <div
                     className={`h-full rounded-full transition-[width] duration-300 ${full ? 'bg-ios-red' : 'bg-ios-blue'}`}
                     style={{ width: `${pct}%` }}

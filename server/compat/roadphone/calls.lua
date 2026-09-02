@@ -4,24 +4,17 @@ local shim = require 'server.compat.roadphone.shared'
 local player = require 'bridge.server.player'
 ---@type table Services persistence layer (server.services.store): per-job duty preferences.
 local store = require 'server.services.store'
----@type table sd-phone config root (configs/config.lua): the company directory.
-local config = require 'configs.config'
+---@type table Services handlers (server.services.actions): resolves a dialed line to its job, the
+---same map the Phone dialer routes 911 through, so the shim cannot answer for a different set of
+---numbers than the phone itself rings.
+local services = require 'server.services.actions'
 
 local registerExport, stubExport, warnOnce = shim.registerExport, shim.stubExport, shim.warnOnce
-
----@type table<string, string> Callable company number -> job name, from configs/services.lua. These
----are sd-phone's emergency lines, which is what RoadPhone calls a Leitstelle number.
-local LINES = {}
-for _, company in ipairs((config.Services or {}).Companies or {}) do
-    if company.canCall and type(company.callNumber) == 'string' then
-        LINES[(company.callNumber:gsub('%D', ''))] = company.job
-    end
-end
 
 ---isLeitstelleNumber(number): whether a number is one of the callable company lines.
 registerExport('isLeitstelleNumber', function(number)
     local digits = shim.digits(number)
-    return digits ~= nil and LINES[digits] ~= nil
+    return digits ~= nil and services.jobForCallNumber(digits) ~= nil
 end)
 
 ---getLeitstelleDispatcherSource(number): a random on-duty member of the company that line belongs
@@ -29,7 +22,7 @@ end)
 ---player's own Services duty toggle otherwise, exactly as company messaging resolves it.
 registerExport('getLeitstelleDispatcherSource', function(number)
     local digits = shim.digits(number)
-    local job = digits and LINES[digits] or nil
+    local job = digits and services.jobForCallNumber(digits) or nil
     if not job then return nil end
 
     local onDuty = {}

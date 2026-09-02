@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Lock } from 'lucide-react';
 
 import { useSessionState } from '@/hooks/useSessionState';
-import { useDownloads } from '@/stores/downloadStore';
+import { useShallow } from 'zustand/react/shallow';
+import { useDownloadProgress, useDownloadStore } from '@/stores/downloadStore';
 import { useHasData } from '@/stores/serviceStore';
 import { useWifiConnected, useWifiNetworks } from '@/stores/wifiStore';
 import { AlertDialog } from '@/ui/AlertDialog';
@@ -12,8 +13,9 @@ import { SegmentedControl } from '@/ui/SegmentedControl';
 import { CircularProgress } from '@/ui/CircularProgress';
 import { AppDetail } from './AppDetail';
 import { getCustomApp } from '@/stores/customAppsStore';
-import { t } from '@/i18n';
+import { t, appLabel } from '@/i18n';
 import type { AppDef } from '@/core/types';
+import { StatusBarSpacer } from '@/ui/StatusBarSpacer';
 
 function getDescriptions(): Record<string, string> {
     return {
@@ -32,6 +34,7 @@ function getDescriptions(): Record<string, string> {
         voicememos:  t('appstore.descVoicememos', 'Record quick voice notes'),
         bank:        t('appstore.descBank', 'Manage money & cards'),
         health:      t('appstore.descHealth', 'Track your daily activity'),
+        documents:   t('appstore.descDocuments', 'Store and sign your documents'),
         settings:    t('appstore.descSettings', 'Tune your phone settings'),
         appstore:    t('appstore.descAppstore', 'Discover and download apps'),
         calculator:  t('appstore.descCalculator', 'Everyday calculations'),
@@ -62,10 +65,16 @@ function getDescriptions(): Record<string, string> {
         battleship:  t('appstore.descBattleship', 'Sink the enemy fleet'),
         streaks:     t('appstore.descStreaks', 'A photo a day, keep your streak'),
         racing:      t('appstore.descRacing', 'Race tracks, rankings and events'),
+        id:          t('appstore.descId', 'Your ID, licences and badge'),
         mdt:         t('appstore.descMdt', 'Police records, calls and warrants'),
         emsmdt:      t('appstore.descEmsmdt', 'Patient charts and medical dispatch'),
         dojmdt:      t('appstore.descDojmdt', 'Court dockets, charges and case files'),
     };
+}
+
+function DownloadRing({ id, queued }: { id: string; queued: boolean }) {
+    const progress = useDownloadProgress(id);
+    return <CircularProgress progress={queued ? 0 : (progress ?? 0)} size={32} stroke={2.5} />;
 }
 
 export function AppStore({ onClose: _onClose, apps, installed, onInstall, onOpenApp }: {
@@ -75,7 +84,11 @@ export function AppStore({ onClose: _onClose, apps, installed, onInstall, onOpen
     onInstall: (id: string) => void;
     onOpenApp: (id: string) => void;
 }) {
-    const downloading = useDownloads();
+    const downloadStatus = useDownloadStore(useShallow(s => {
+        const out: Record<string, 'queued' | 'active'> = {};
+        for (const [id, p] of Object.entries(s.downloads)) out[id] = p < 0 ? 'queued' : 'active';
+        return out;
+    }));
     const hasData = useHasData();
     const wifiConnected = useWifiConnected();
     const wifiNetworks = useWifiNetworks();
@@ -101,6 +114,7 @@ export function AppStore({ onClose: _onClose, apps, installed, onInstall, onOpen
     const [q, setQ] = useSessionState('appstore:search', '');
     const [filter, setFilter] = useSessionState<'all' | 'notInstalled'>('appstore:filter', 'all');
     const [selectedId, setSelectedId] = useSessionState<string | null>('appstore:selected', null);
+    const selectedProgress = useDownloadProgress(selectedId ?? '');
     const selected = apps.find(a => a.id === selectedId) ?? null;
     const query = q.trim().toLowerCase();
     const descriptions = getDescriptions();
@@ -111,12 +125,12 @@ export function AppStore({ onClose: _onClose, apps, installed, onInstall, onOpen
         if (filter === 'notInstalled' && isInstalled) return false;
         if (!query) return true;
         const desc = descOf(a.id);
-        return a.label.toLowerCase().includes(query) || desc.toLowerCase().includes(query);
+        return appLabel(a).toLowerCase().includes(query) || desc.toLowerCase().includes(query);
     });
 
     return (
         <div className="absolute inset-0 flex flex-col bg-base font-sf">
-            <div className="h-[58px] shrink-0" aria-hidden />
+            <StatusBarSpacer />
 
             <h1 className="px-5 pb-2 pt-1 text-[32px] font-bold tracking-tight text-black dark:text-white">{t('appstore.title', 'Apps')}</h1>
 
@@ -140,26 +154,26 @@ export function AppStore({ onClose: _onClose, apps, installed, onInstall, onOpen
                     <div className="overflow-hidden rounded-[10px] bg-surface">
                         {list.map((a, i) => {
                             const isInstalled = !!a.base || installed.has(a.id);
-                            const dl = downloading[a.id];
-                            const isDownloading = dl !== undefined;
-                            const isQueued = isDownloading && dl < 0;
+                            const status = downloadStatus[a.id];
+                            const isDownloading = status !== undefined;
+                            const isQueued = status === 'queued';
                             const locked = !isInstalled && lockedNetwork(a) !== null;
                             return (
-                                <div key={a.id} className={`flex items-center gap-3.5 py-2.5 pl-3.5 ${i < list.length - 1 ? 'border-b border-black/10 dark:border-white/10' : ''}`}>
-                                    <button type="button" onClick={() => setSelectedId(a.id)} aria-label={t('appstore.appDetails', '{label} details', { label: a.label })} className="shrink-0 active:opacity-60">
+                                <div key={a.id} className={`flex items-center gap-3.5 py-2.5 pl-3.5 ${i < list.length - 1 ? 'border-b border-hairline/10' : ''}`}>
+                                    <button type="button" onClick={() => setSelectedId(a.id)} aria-label={t('appstore.appDetails', '{label} details', { label: appLabel(a) })} className="shrink-0 active:opacity-60">
                                         <StoreIcon icon={a.icon} />
                                     </button>
                                     <div className="flex min-w-0 flex-1 items-center gap-3 pr-3.5">
                                         <button type="button" onClick={() => setSelectedId(a.id)} className="min-w-0 flex-1 text-left active:opacity-60">
                                             <div className="flex items-center gap-1.5">
-                                                <span className="min-w-0 truncate text-[23px] font-medium leading-tight text-black dark:text-white">{a.label}</span>
+                                                <span className="min-w-0 truncate text-[23px] font-medium leading-tight text-black dark:text-white">{appLabel(a)}</span>
                                                 {locked && <Lock className="h-[15px] w-[15px] shrink-0 text-black/45 dark:text-white/45" role="img" aria-label={t('appstore.wifiOnly', 'Wi-Fi only')} />}
                                             </div>
                                             <div className="truncate text-[15px] leading-snug text-black/65 dark:text-white/65">{descOf(a.id)}</div>
                                         </button>
                                         {isDownloading ? (
                                             <div className={`relative flex shrink-0 items-center justify-center text-ios-blue ${isQueued ? 'animate-pulse' : ''}`} style={{ width: 40, height: 40 }} aria-label={isQueued ? t('appstore.waitingToDownload', 'Waiting to download') : t('appstore.downloading', 'Downloading')}>
-                                                <CircularProgress progress={isQueued ? 0 : dl} size={32} stroke={2.5} />
+                                                <DownloadRing id={a.id} queued={isQueued} />
                                                 <div className="absolute h-[8px] w-[8px] rounded-[1.5px] bg-ios-blue" />
                                             </div>
                                         ) : (
@@ -186,7 +200,7 @@ export function AppStore({ onClose: _onClose, apps, installed, onInstall, onOpen
                     app={selected}
                     desc={descOf(selected.id)}
                     installed={!!selected.base || installed.has(selected.id)}
-                    downloadProgress={downloading[selected.id]}
+                    downloadProgress={selectedProgress}
                     onBack={() => setSelectedId(null)}
                     onInstall={installGuarded}
                     canDownload={hasData && lockedNetwork(selected) === null}

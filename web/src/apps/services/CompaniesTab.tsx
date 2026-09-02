@@ -13,6 +13,7 @@ import { t } from '@/i18n';
 import { ServiceAvatar } from './ServiceAvatar';
 import { type Company } from './data';
 import { callCompany, messageCompany } from './servicesApi';
+import { failText } from '@/core/api';
 
 export function CompaniesTab({ companies, onMessaged }: { companies: Company[]; onMessaged?: () => void }) {
     const [msgTo, setMsgTo] = useState<Company | null>(null);
@@ -35,7 +36,7 @@ export function CompaniesTab({ companies, onMessaged }: { companies: Company[]; 
 
     async function call(c: Company) {
         const res = await callCompany(c.id);
-        if (!res.success) setError(res.message ?? t('services.couldntCall', "Couldn't place the call."));
+        if (!res.success) setError(failText(res, t('services.couldntCall', "Couldn't place the call.")));
     }
 
     return (
@@ -122,7 +123,7 @@ function CompanyCard({ company, onLocate, onCall, onMessage }: {
                         ? t('services.dutyOpen', 'Staff on duty')
                         : t('services.dutyClosed', 'Nobody on duty')}
                     className={`absolute -right-px -top-px h-[15px] w-[15px] rounded-full ring-[3px] ring-surface ${
-                        company.onDuty ? 'bg-[#34c759]' : 'bg-[#ff3b30]'
+                        company.onDuty ? 'bg-[#34c759]' : 'bg-ios-red'
                     }`}
                 />
             </div>

@@ -4,13 +4,13 @@ import { Eye, Newspaper, Settings2 } from 'lucide-react';
 import { t } from '@/i18n';
 import { EmptyState } from '@/ui/EmptyState';
 import { useDidEnter } from '@/hooks/useDidEnter';
-import { NavContext } from '@/hooks/useIosPush';
+import { NavContext, NOOP_NAV } from '@/hooks/useIosPush';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useTheme } from '@/stores/themeStore';
 import { Article } from './Article';
 import { ManageDashboard } from './ManageDashboard';
 import {
-    CATEGORIES, type Article as ArticleT, type Category, formatViews, WEAZEL_RED,
+    CATEGORIES, categoryLabel, type Article as ArticleT, type Category, formatViews, WEAZEL_RED,
 } from './data';
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { weazelFeed, weazelView, weazelWatch } from './weazelnewsApi';
@@ -163,7 +163,7 @@ export function WeazelNews({ onClose: _onClose }: { onClose: () => void }) {
                                 }`}
                                 style={active ? { background: WEAZEL_RED } : undefined}
                             >
-                                {cat}
+                                {categoryLabel(cat)}
                             </button>
                         );
                     })}
@@ -210,7 +210,7 @@ export function WeazelNews({ onClose: _onClose }: { onClose: () => void }) {
             </div>
 
             {open && (
-                <NavContext.Provider value={{ onWillBack: () => {} }}>
+                <NavContext.Provider value={NOOP_NAV}>
                     <Article article={open} onBack={() => setOpenId(null)} animateIn={animateNav} />
                 </NavContext.Provider>
             )}

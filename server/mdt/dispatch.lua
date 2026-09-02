@@ -340,9 +340,9 @@ end)
 ---the actions the Logs section exists to show.
 dispatch.setStatus = access.gated('dispatch.status', function(_src, payload, me)
     local code = payload.code
-    if not CODES[code] then return util.fail('Unknown status code') end
+    if not CODES[code] then return util.fail('mdt.unknownStatusCode', 'Unknown status code') end
     if not util.cooldown(me.citizenid, 'mdt:dispatch:status', STATUS_GAP) then
-        return util.fail('Slow down')
+        return util.fail('mdt.slowDown', 'Slow down')
     end
 
     local unit = ensureUnit(me)
@@ -364,7 +364,7 @@ dispatch.attach = access.gated('dispatch.attach', function(_src, payload, me)
     -- A call off this terminal's board is reported as gone rather than refused, because to this
     -- caller it never existed: the id could only have been guessed.
     if not call or not onBoard(call.domain, access.domain(me)) then
-        return util.fail('That call is no longer active')
+        return util.fail('mdt.callNoLongerActive', 'That call is no longer active')
     end
 
     local unit = ensureUnit(me)
@@ -382,7 +382,7 @@ end)
 ---Detaches the caller's unit from a call and returns them to 10-8.
 dispatch.detach = access.gated('dispatch.attach', function(_src, payload, me)
     local call = calls[payload.callId]
-    if not call then return util.fail('That call is no longer active') end
+    if not call then return util.fail('mdt.callNoLongerActive', 'That call is no longer active') end
 
     local unit = ensureUnit(me)
     call.attached[unit.citizenid] = nil
@@ -402,9 +402,9 @@ dispatch.locate = access.gated('dispatch.view', function(_src, payload, me)
     if payload.callId ~= nil then
         local call = calls[payload.callId]
         if not call or not onBoard(call.domain, domain) then
-            return util.fail('That call is no longer active')
+            return util.fail('mdt.callNoLongerActive', 'That call is no longer active')
         end
-        if not call.coords then return util.fail('That call has no coordinates') end
+        if not call.coords then return util.fail('mdt.callHasNoCoordinates', 'That call has no coordinates') end
         return util.ok({ coords = call.coords })
     end
 
@@ -412,14 +412,14 @@ dispatch.locate = access.gated('dispatch.view', function(_src, payload, me)
         for _, u in pairs(units) do
             if u.citizenid == payload.citizenid and onBoard(u.domain, domain) then
                 local coords = coordsOf(u.source)
-                if not coords then return util.fail('That unit is not on the map') end
+                if not coords then return util.fail('mdt.unitNotMap', 'That unit is not on the map') end
                 return util.ok({ coords = coords })
             end
         end
-        return util.fail('That unit is not on the air')
+        return util.fail('mdt.unitNotAir', 'That unit is not on the air')
     end
 
-    return util.fail('Nothing to locate')
+    return util.fail('mdt.nothingLocate', 'Nothing to locate')
 end)
 
 ---Renames a unit already on the air, after the roster persists a new callsign.

@@ -1,3 +1,5 @@
+import { Fragment, memo } from 'react';
+
 import { getCategories, type Category } from './data';
 import { txTimeLabel, type BankTx } from './bankingApi';
 import { TxAvatar } from './TxAvatar';
@@ -58,10 +60,12 @@ export function TxRows({ items, onSelect }: { items: BankTx[]; onSelect?: (tx: B
     return (
         <div className="overflow-hidden rounded-[16px] bg-surface shadow-sm">
             {items.map((tx, i) => (
-                <div key={tx.id}>
-                    <TxRow tx={tx} onSelect={onSelect} />
-                    {i < items.length - 1 && <div className="pointer-events-none mx-[6%] h-[0.5px] bg-black/15 dark:bg-white/15" />}
-                </div>
+                <Fragment key={tx.id}>
+                    <div style={ROW_BOX}>
+                        <TxRow tx={tx} onSelect={onSelect} hideAmount={hideAmount} />
+                    </div>
+                    {i < items.length - 1 && <div className="pointer-events-none h-[0.5px] bg-hairline/15" />}
+                </Fragment>
             ))}
         </div>
     );

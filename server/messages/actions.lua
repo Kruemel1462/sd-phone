@@ -34,6 +34,16 @@ local notifications = require 'server.notifications.init'
 local util = require 'server.util'
 local ok, fail, digits, trim, initialsFor, formatNumber = util.ok, util.fail, util.digits, util.trim, util.initialsFor, util.formatNumber
 
+---Prunes a thread only once it has actually outgrown the cap. The anti-join DELETE is far dearer
+---than the indexed COUNT, and on most sends there is nothing to remove.
+---@param cid string mailbox owner
+---@param conversation string thread key
+local function trimThread(cid, conversation)
+    if store.threadCount(cid, conversation) > cfg.MessagesPerThread then
+        trimThread(cid, conversation)
+    end
+end
+
 
 local colorFor = util.colorFor
 
@@ -351,7 +361,7 @@ end
 ---@return table
 function actions.list(source)
     local cid = player.getIdentifier(source)
-    if not cid then return fail('Player not found') end
+    if not cid then return fail('messages.playerNotFound', 'Player not found') end
 
     local myNumber  = digits(settings.ensurePhoneNumber(cid) or '')
     local contactMap = contactMapFor(cid)
@@ -391,11 +401,11 @@ end
 ---@return table result { success, data = { conversation } }
 function actions.thread(source, payload)
     local cid = player.getIdentifier(source)
-    if not cid then return fail('Player not found') end
+    if not cid then return fail('messages.playerNotFound', 'Player not found') end
 
     payload = type(payload) == 'table' and payload or {}
     local conversation = type(payload.id) == 'string' and payload.id or ''
-    if conversation == '' then return fail('Missing conversation') end
+    if conversation == '' then return fail('messages.missingConversation', 'Missing conversation') end
 
     local myNumber   = digits(settings.ensurePhoneNumber(cid) or '')
     local contactMap = contactMapFor(cid)
@@ -436,18 +446,18 @@ end
 ---@param mid string shared logical message id stamped on both copies
 ---@return table
 local function sendDirect(source, cid, myNumber, target, kind, body, meta, ts, mid)
-    if target == '' or #target > 48 then return fail('No recipient') end
-    if target == myNumber then return fail('You can\'t message yourself') end
+    if target == '' or #target > 48 then return fail('messages.noRecipient', 'No recipient') end
+    if target == myNumber then return fail('messages.canTMessageYourself', 'You can\'t message yourself') end
 
     -- pruneThread caps rows per thread, so a fresh destination number each time is unbounded
     -- growth. The count is only paid when the thread is genuinely new.
     if not store.threadExists(cid, target) and store.conversationCount(cid) >= MAX_CONVERSATIONS then
-        return fail('Your inbox is full. Delete a conversation first.')
+        return fail('messages.inboxFullDeleteConversationFirst', 'Your inbox is full. Delete a conversation first.')
     end
 
     local outId = store.newId()
     store.insertMessage(outId, mid, cid, target, myNumber, 'outgoing', kind, body, meta, true, ts)
-    store.pruneThread(cid, target, cfg.MessagesPerThread)
+    trimThread(cid, target)
 
     local targetCid = settings.getCitizenByNumber(target)
     local inId, withheld, targetSrc
@@ -458,7 +468,7 @@ local function sendDirect(source, cid, myNumber, target, kind, body, meta, ts, m
         withheld = settings.isAirplane(targetCid) or not service.allows(targetSrc, 'text')
         inId = store.newId()
         store.insertMessage(inId, mid, targetCid, myNumber, myNumber, 'incoming', kind, body, meta, false, ts, withheld)
-        store.pruneThread(targetCid, myNumber, cfg.MessagesPerThread)
+        trimThread(targetCid, myNumber)
 
         if targetSrc and not withheld then
             -- No character-name fallback: an unsaved sender shows as their number, matching
@@ -522,7 +532,7 @@ end
 ---@return table
 function actions.appMessage(source, targetNumber, kind, body, meta)
     local cid = player.getIdentifier(source)
-    if not cid then return fail('Player not found') end
+    if not cid then return fail('messages.playerNotFound', 'Player not found') end
 
     local myNumber = digits(settings.ensurePhoneNumber(cid) or '')
     local target   = digits(targetNumber)
@@ -608,7 +618,7 @@ function actions.systemText(senderNumber, senderName, targetNumber, body, opts)
     local targetSrc = player.getSourceByIdentifier(targetCid)
     local withheld = settings.isAirplane(targetCid) or not service.allows(targetSrc, 'text')
     store.insertMessage(inId, mid, targetCid, senderNumber, senderNumber, 'incoming', kind, body, meta, false, ts, withheld)
-    store.pruneThread(targetCid, senderNumber, cfg.MessagesPerThread)
+    trimThread(targetCid, senderNumber)
 
     if targetSrc and not withheld then
         local participant = resolveParticipant(senderNumber, nil, senderName)
@@ -665,8 +675,8 @@ end
 ---@return table
 local function sendGroup(source, cid, myNumber, groupId, kind, body, meta, ts, mid)
     local group = store.getGroup(groupId)
-    if not group then return fail('Conversation not found') end
-    if not store.isGroupMember(groupId, cid) then return fail('You are not in this conversation') end
+    if not group then return fail('messages.conversationNotFound', 'Conversation not found') end
+    if not store.isGroupMember(groupId, cid) then return fail('messages.notConversation', 'You are not in this conversation') end
 
     local key        = 'g-' .. groupId
     local senderName = player.getName(source)
@@ -675,12 +685,17 @@ local function sendGroup(source, cid, myNumber, groupId, kind, body, meta, ts, m
 
     -- One pass over the connected players for the whole fan-out.
     local activeSrcs = player.activeCidMap()
+    ---@type table[] One mailbox copy per member, written in a single INSERT after the fan-out.
+    local batch = {}
     for _, m in ipairs(members) do
         local isMe = m.citizenid == cid
         local withheld = (not isMe) and settings.isAirplane(m.citizenid)
         local id   = store.newId()
-        store.insertMessage(id, mid, m.citizenid, key, myNumber, isMe and 'outgoing' or 'incoming', kind, body, meta, isMe, ts, withheld)
-        store.pruneThread(m.citizenid, key, cfg.MessagesPerThread)
+        batch[#batch + 1] = {
+            id = id, mid = mid, citizenid = m.citizenid, conversation = key, sender = myNumber,
+            direction = isMe and 'outgoing' or 'incoming', kind = kind, body = body, meta = meta,
+            isRead = isMe, createdAt = ts, withheld = withheld,
+        }
 
         if isMe then
             outId = id
@@ -708,6 +723,9 @@ local function sendGroup(source, cid, myNumber, groupId, kind, body, meta, ts, m
             end
         end
     end
+
+    store.insertMessages(batch)
+    for _, m in ipairs(members) do trimThread(m.citizenid, key) end
 
     -- First-party send announcement (group shape), fired once per send.
     TriggerEvent('sd-phone:server:messages:sent', {
@@ -737,24 +755,24 @@ end
 function actions.send(source, payload)
     payload = type(payload) == 'table' and payload or {}
     local cid = player.getIdentifier(source)
-    if not cid then return fail('Player not found') end
+    if not cid then return fail('messages.playerNotFound', 'Player not found') end
     if not util.cooldown(cid, 'messages:send', SEND_GAP_MS)
         or not util.rateLimit(cid, 'messages:send', SEND_WINDOW_MS, SEND_PER_WINDOW) then
-        return fail('Slow down')
+        return fail('messages.slowDown', 'Slow down')
     end
-    if settings.isAirplane(cid) then return fail('Airplane Mode is on') end
-    if not service.allows(source, 'text') then return fail('No Service') end
+    if settings.isAirplane(cid) then return fail('messages.airplaneMode', 'Airplane Mode is on') end
+    if not service.allows(source, 'text') then return fail('messages.noService', 'No Service') end
     local muted = moderation.guard(cid, 'sms'); if muted then return muted end
 
     local conversation = tostring(payload.conversation or '')
-    if conversation == '' then return fail('No conversation') end
+    if conversation == '' then return fail('messages.noConversation', 'No conversation') end
 
     local kind = VALID_KINDS[payload.kind] and payload.kind or 'text'
     local body = trim(payload.body)
     if #body > cfg.MaxBodyLength then body = body:sub(1, cfg.MaxBodyLength) end
 
     local meta = sanitizeMeta(kind, payload)
-    if not hasContent(kind, body, meta) then return fail('Empty message') end
+    if not hasContent(kind, body, meta) then return fail('messages.emptyMessage', 'Empty message') end
 
     local isGroup = lib.string.startsWith(conversation, 'g-')
 
@@ -762,10 +780,10 @@ function actions.send(source, payload)
     -- out; in legacy/stock a resolvable caller always has a number, so this never trips). Gate
     -- BEFORE the money branch so a refused text never moves cash.
     local myNumber = digits(settings.ensurePhoneNumber(cid) or '')
-    if myNumber == '' then return fail('No service. Install a SIM card to send messages.') end
+    if myNumber == '' then return fail('messages.noServiceInstallSimCard', 'No service. Install a SIM card to send messages.') end
 
     if kind == 'money' then
-        if isGroup then return fail('Money can only be sent in a direct message') end
+        if isGroup then return fail('messages.moneyCanOnlySentDirect', 'Money can only be sent in a direct message') end
         if not meta.requested then
             local res = banking.send(source, {
                 number = digits(conversation),
@@ -773,7 +791,8 @@ function actions.send(source, payload)
                 note   = 'Phone payment',
             })
             if not res or not res.success then
-                return fail(res and res.message or 'Payment failed')
+                if res and res.message then return res end
+                return fail('messages.paymentFailed', 'Payment failed')
             end
         end
     end
@@ -795,15 +814,15 @@ end
 function actions.react(source, payload)
     payload = type(payload) == 'table' and payload or {}
     local cid = player.getIdentifier(source)
-    if not cid then return fail('Player not found') end
+    if not cid then return fail('messages.playerNotFound', 'Player not found') end
 
     local id    = tostring(payload.id or '')
     local emoji = tostring(payload.emoji or '')
-    if id == '' then return fail('No message') end
-    if not REACTION_SET[emoji] then return fail('Invalid reaction') end
+    if id == '' then return fail('messages.noMessage', 'No message') end
+    if not REACTION_SET[emoji] then return fail('messages.invalidReaction', 'Invalid reaction') end
 
     local mid = store.midForCopy(id, cid)
-    if not mid then return fail('Message not found') end
+    if not mid then return fail('messages.messageNotFound', 'Message not found') end
 
     store.toggleReaction(mid, cid, emoji, os.time())
 
@@ -835,10 +854,10 @@ end
 function actions.createGroup(source, payload)
     payload = type(payload) == 'table' and payload or {}
     local cid = player.getIdentifier(source)
-    if not cid then return fail('Player not found') end
+    if not cid then return fail('messages.playerNotFound', 'Player not found') end
 
     local name = trim(payload.name)
-    if name == '' then return fail('Group name required') end
+    if name == '' then return fail('messages.groupNameRequired', 'Group name required') end
     if #name > cfg.MaxGroupNameLength then name = name:sub(1, cfg.MaxGroupNameLength) end
 
     local myNumber = digits(settings.ensurePhoneNumber(cid) or '')
@@ -856,14 +875,14 @@ function actions.createGroup(source, payload)
         end
     end
 
-    if #resolved == 0 then return fail('Add at least one valid member') end
+    if #resolved == 0 then return fail('messages.addLeastOneValidMember', 'Add at least one valid member') end
     if #resolved + 1 > cfg.MaxGroupMembers then
-        return fail(('Groups are capped at %d members'):format(cfg.MaxGroupMembers))
+        return fail('messages.groupsCappedMembers', 'Groups are capped at {n} members', { n = cfg.MaxGroupMembers })
     end
 
     local groupId = store.newId()
     if not store.createGroup(groupId, name, cid, os.time()) then
-        return fail('Failed to create group')
+        return fail('messages.failedCreateGroup', 'Failed to create group')
     end
 
     store.addGroupMember(groupId, cid, myNumber, player.getName(source))
@@ -904,12 +923,12 @@ end
 function actions.addGroupMember(source, payload)
     payload = type(payload) == 'table' and payload or {}
     local cid = player.getIdentifier(source)
-    if not cid then return fail('Player not found') end
+    if not cid then return fail('messages.playerNotFound', 'Player not found') end
 
     local key = tostring(payload.conversation or '')
-    if not lib.string.startsWith(key, 'g-') then return fail('Not a group conversation') end
+    if not lib.string.startsWith(key, 'g-') then return fail('messages.notGroupConversation', 'Not a group conversation') end
     local groupId = key:sub(3)
-    if not store.isGroupMember(groupId, cid) then return fail('You are not in this group') end
+    if not store.isGroupMember(groupId, cid) then return fail('messages.notGroup', 'You are not in this group') end
 
     local myNumber = digits(settings.ensurePhoneNumber(cid) or '')
 
@@ -929,9 +948,9 @@ function actions.addGroupMember(source, payload)
         end
     end
 
-    if #resolved == 0 then return fail('Add at least one valid member') end
+    if #resolved == 0 then return fail('messages.addLeastOneValidMember', 'Add at least one valid member') end
     if #current + #resolved > cfg.MaxGroupMembers then
-        return fail(('Groups are capped at %d members'):format(cfg.MaxGroupMembers))
+        return fail('messages.groupsCappedMembers', 'Groups are capped at {n} members', { n = cfg.MaxGroupMembers })
     end
 
     -- One pass over the connected players, shared by both loops below.
@@ -970,19 +989,19 @@ end
 function actions.updateGroup(source, payload)
     payload = type(payload) == 'table' and payload or {}
     local cid = player.getIdentifier(source)
-    if not cid then return fail('Player not found') end
+    if not cid then return fail('messages.playerNotFound', 'Player not found') end
 
     local key = tostring(payload.conversation or '')
-    if not lib.string.startsWith(key, 'g-') then return fail('Not a group conversation') end
+    if not lib.string.startsWith(key, 'g-') then return fail('messages.notGroupConversation', 'Not a group conversation') end
     local groupId = key:sub(3)
 
     local group = store.getGroup(groupId)
-    if not group then return fail('Group not found') end
-    if group.owner_cid ~= cid then return fail('Only the group creator can edit this group') end
+    if not group then return fail('messages.groupNotFound', 'Group not found') end
+    if group.owner_cid ~= cid then return fail('messages.onlyGroupCreatorCanEdit', 'Only the group creator can edit this group') end
 
     local name = trim(payload.name)
     if name == '' then name = group.name end
-    if name == '' then return fail('Group name required') end
+    if name == '' then return fail('messages.groupNameRequired', 'Group name required') end
     if #name > cfg.MaxGroupNameLength then name = name:sub(1, cfg.MaxGroupNameLength) end
 
     local avatar = payload.avatar
@@ -1023,21 +1042,21 @@ end
 function actions.removeGroupMember(source, payload)
     payload = type(payload) == 'table' and payload or {}
     local cid = player.getIdentifier(source)
-    if not cid then return fail('Player not found') end
+    if not cid then return fail('messages.playerNotFound', 'Player not found') end
 
     local key = tostring(payload.conversation or '')
-    if not lib.string.startsWith(key, 'g-') then return fail('Not a group conversation') end
+    if not lib.string.startsWith(key, 'g-') then return fail('messages.notGroupConversation', 'Not a group conversation') end
     local groupId = key:sub(3)
 
     local group = store.getGroup(groupId)
-    if not group then return fail('Group not found') end
-    if group.owner_cid ~= cid then return fail('Only the group creator can remove members') end
+    if not group then return fail('messages.groupNotFound', 'Group not found') end
+    if group.owner_cid ~= cid then return fail('messages.onlyGroupCreatorCanRemove', 'Only the group creator can remove members') end
 
     local mnum = digits(payload.member or '')
     local mcid = mnum ~= '' and settings.getCitizenByNumber(mnum)
-    if not mcid then return fail('Member not found') end
-    if mcid == group.owner_cid then return fail('The creator cannot be removed') end
-    if not store.isGroupMember(groupId, mcid) then return fail('Not a member of this group') end
+    if not mcid then return fail('messages.memberNotFound', 'Member not found') end
+    if mcid == group.owner_cid then return fail('messages.creatorCannotRemoved', 'The creator cannot be removed') end
+    if not store.isGroupMember(groupId, mcid) then return fail('messages.notMemberGroup', 'Not a member of this group') end
 
     store.removeGroupMember(groupId, mcid)
 
@@ -1079,10 +1098,10 @@ end
 function actions.markRead(source, payload)
     payload = type(payload) == 'table' and payload or {}
     local cid = player.getIdentifier(source)
-    if not cid then return fail('Player not found') end
+    if not cid then return fail('messages.playerNotFound', 'Player not found') end
 
     local conversation = tostring(payload.conversation or '')
-    if conversation == '' then return fail('No conversation') end
+    if conversation == '' then return fail('messages.noConversation', 'No conversation') end
 
     store.markThreadRead(cid, conversation)
     badges.push(source)
@@ -1097,10 +1116,10 @@ end
 function actions.deleteConversation(source, payload)
     payload = type(payload) == 'table' and payload or {}
     local cid = player.getIdentifier(source)
-    if not cid then return fail('Player not found') end
+    if not cid then return fail('messages.playerNotFound', 'Player not found') end
 
     local conversation = tostring(payload.conversation or '')
-    if conversation == '' then return fail('No conversation') end
+    if conversation == '' then return fail('messages.noConversation', 'No conversation') end
 
     store.deleteThread(cid, conversation)
 
@@ -1168,7 +1187,7 @@ function actions.deliverPending(source, cid, number)
     if #convs == 0 then return end
 
     for _, conversation in ipairs(convs) do
-        store.pruneThread(cid, conversation, cfg.MessagesPerThread)
+        trimThread(cid, conversation)
     end
 
     if airplane or not GetPlayerName(source) then
@@ -1196,12 +1215,15 @@ end
 function actions.uploadVoice(source, payload)
     payload = type(payload) == 'table' and payload or {}
     local audio = payload.audio
-    if type(audio) ~= 'string' or not lib.string.startsWith(audio, 'data:audio/') then return fail('Bad audio payload') end
+    if type(audio) ~= 'string' or not lib.string.startsWith(audio, 'data:audio/') then return fail('messages.badAudioPayload', 'Bad audio payload') end
 
     local maxBytes = (config.VoiceMemos and config.VoiceMemos.MaxAudioBytes) or (8 * 1024 * 1024)
-    if #audio > maxBytes then return fail('Recording is too long') end
+    if #audio > maxBytes then return fail('messages.recordingTooLong', 'Recording is too long') end
     local okLimit, why = mediaLimit.check(player.getIdentifier(source), #audio)
-    if not okLimit then return fail(why == 'cooldown' and 'Slow down a moment' or 'Upload limit reached') end
+    if not okLimit then
+        if why == 'cooldown' then return fail('messages.slowDownMoment', 'Slow down a moment') end
+        return fail('messages.uploadLimitReached', 'Upload limit reached')
+    end
 
     local ext = audio:find('^data:audio/mpeg') and 'mp3'
         or audio:find('^data:audio/ogg') and 'ogg'
@@ -1216,7 +1238,7 @@ function actions.uploadVoice(source, payload)
     end)
 
     local url = Citizen.Await(p)
-    if not url then return fail('Upload failed') end
+    if not url then return fail('messages.uploadFailed', 'Upload failed') end
     return ok({ url = url })
 end
 

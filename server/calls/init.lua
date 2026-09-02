@@ -16,7 +16,7 @@ local ice     = require 'server.voice.ice'
 -- than a setup gap: call connects, self-view works, the peer's pane stays black.
 local hasTurn = ice.cloudflareConfigured() or GetConvar('sd_phone_turn_url', '') ~= ''
 if config.Phone.WarnAboutTurn ~= false and not hasTurn then
-    boot.warn('^3[sd-phone]^0 no TURN relay set: video calls and Live only connect between players on the same network.')
+    boot.warn('^3[sd-phone]^0 no TURN relay set: video calls only connect between players on the same network.')
     boot.warn('^3[sd-phone]^0 set sd_cf_turn_token_id + sd_cf_turn_api_token (free, see the docs), or WarnAboutTurn = false in configs/phone.lua.')
 end
 
@@ -68,7 +68,7 @@ end
 ---@param number string|number the number to dial
 ---@return table
 exports('startCall', function(source, number)
-    if type(source) ~= 'number' then return fail('Invalid source') end
+    if type(source) ~= 'number' then return fail('calls.invalidSource', 'Invalid source') end
     return actions.dial(source, { number = number })
 end)
 
@@ -80,11 +80,11 @@ end)
 ---@param displayNumber? string|number
 ---@return table
 exports('startGroupCall', function(source, targetSources, displayName, displayNumber)
-    if type(source) ~= 'number' then return fail('Invalid source') end
-    if type(targetSources) ~= 'table' then return fail('No recipients') end
+    if type(source) ~= 'number' then return fail('calls.invalidSource', 'Invalid source') end
+    if type(targetSources) ~= 'table' then return fail('calls.noRecipients', 'No recipients') end
 
     local name = trim(displayName)
-    if name == '' then return fail('No display name') end
+    if name == '' then return fail('calls.noDisplayName', 'No display name') end
     if #name > MAX_DISPLAY_NAME then name = name:sub(1, MAX_DISPLAY_NAME) end
 
     local targets = {}
@@ -93,7 +93,7 @@ exports('startGroupCall', function(source, targetSources, displayName, displayNu
         local tcid = tsrc and player.getIdentifier(tsrc)
         if tcid then targets[#targets + 1] = { src = tsrc, cid = tcid } end
     end
-    if #targets == 0 then return fail('No one is available right now') end
+    if #targets == 0 then return fail('calls.noOneAvailableRightNow', 'No one is available right now') end
 
     return actions.callGroup(source, targets, name, displayNumber)
 end)
@@ -119,7 +119,7 @@ end)
 ---@param source number player server id
 ---@return table { success: boolean, message?: string }
 exports('endCallFor', function(source)
-    if type(source) ~= 'number' then return fail('Invalid source') end
+    if type(source) ~= 'number' then return fail('calls.invalidSource', 'Invalid source') end
     local call = currentFor(source)
     if not call then return ok() end
     return actions.hangup(source, { channel = call.channel })

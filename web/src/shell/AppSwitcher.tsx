@@ -7,7 +7,7 @@ import { AppBadge } from './AppBadge';
 import { registerCardStage } from './appDeckBridge';
 import { useBadges } from '@/stores/badgeStore';
 import type { AppDef } from '@/core/types';
-import { t } from '@/i18n';
+import { t, appLabel } from '@/i18n';
 
 const SW         = device.screen.w;
 const SH         = device.screen.h;
@@ -236,13 +236,12 @@ export function AppSwitcher({
                                 transform:       `translateX(${tx}px) translateY(${ty}px) scale(${cScale})`,
                                 transformOrigin: '50% 0%',
                                 opacity:         cardOpacity,
-                                filter:          `brightness(${cBright})`,
                                 transition: isEjecting
                                     ? 'transform 0.26s ease-in, opacity 0.26s ease-in'
                                     : snapping
-                                        ? 'transform 0.42s cubic-bezier(0.22,1,0.36,1), filter 0.4s ease'
+                                        ? 'transform 0.42s cubic-bezier(0.22,1,0.36,1)'
                                         : 'none',
-                                willChange: 'transform, opacity, filter',
+                                willChange: 'transform, opacity',
                             }}
                         >
                             <div
@@ -274,7 +273,7 @@ export function AppSwitcher({
                                     className="flex-1 truncate text-[16px] font-semibold text-white"
                                     style={{ textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}
                                 >
-                                    {appDef?.label ?? appId}
+                                    {appDef ? appLabel(appDef) : appId}
                                 </span>
 
                                 {/* Close: to the RIGHT of the name, a larger
@@ -283,7 +282,7 @@ export function AppSwitcher({
                                     and flickers in CEF). */}
                                 <button
                                     type="button"
-                                    aria-label={`Close ${appDef?.label ?? appId}`}
+                                    aria-label={t('shell.closeApp', 'Close {label}', { label: appDef ? appLabel(appDef) : appId })}
                                     onClick={e => { e.stopPropagation(); onRemove(appId); }}
                                     className="shrink-0 flex h-[30px] w-[30px] items-center justify-center rounded-full text-white transition-colors duration-200 active:bg-white/30"
                                     style={{
@@ -316,11 +315,16 @@ export function AppSwitcher({
 
                                 <CardStage appId={appId} />
 
+                                <div
+                                    className="pointer-events-none absolute inset-0 z-[1] bg-black"
+                                    style={{ opacity: 1 - cBright, transition: snapping ? 'opacity 0.4s ease' : 'none' }}
+                                />
+
                                 {/* Transparent tap target sits ABOVE the live view (which is
                                     inert / pointer-events:none while parented into the card). */}
                                 <button
                                     type="button"
-                                    aria-label={appDef?.label ?? appId}
+                                    aria-label={appDef ? appLabel(appDef) : appId}
                                     className="absolute inset-0 z-[2]"
                                     onClick={e => {
                                         e.stopPropagation();

@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUp, ChevronLeft, MapPin, Mic, Phone, UserPlus, Video, X } from 'lucide-react';
+import { ChevronLeft, MapPin, Mic, Phone, UserPlus, Video, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 import { device } from '@device';
 import { t } from '@/i18n';
 import { useTheme } from '@/stores/themeStore';
-import { useSessionState } from '@/hooks/useSessionState';
+import { Composer, type ComposerHandle } from './Composer';
 import { fetchNui, isFiveM } from '@/core/nui';
-import { apiData } from '@/core/api';
+import { apiData, failText } from '@/core/api';
 import { requestOpenMaps } from '@/shell/deeplink';
 import { AlertDialog } from '@/ui/AlertDialog';
 import { ActionSheet } from '@/ui/ActionSheet';
@@ -97,7 +97,6 @@ export function ChatView({ conv, totalUnread, contacts, myNumber, onBack, onSend
         return [...conv.messages, ...extra].sort((a, b) => a.ts - b.ts);
     }, [conv.messages, conv.id]);
 
-    const [draft,    setDraft]    = useSessionState(`messages:draft:${conv.id}`, '');
     const [panel,    setPanel]    = useState<Panel>(null);
     const [closing,  setClosing]  = useState(false);
     const [pickerId, setPickerId] = useState<string | null>(null);
@@ -118,6 +117,7 @@ export function ChatView({ conv, totalUnread, contacts, myNumber, onBack, onSend
     const [addingContact, setAddingContact] = useState(false);
     const listRef   = useRef<HTMLDivElement>(null);
     const inputRef  = useRef<HTMLInputElement>(null);
+    const composerRef = useRef<ComposerHandle>(null);
 
     useTapbackDismiss(pickerId, setPickerId);
 
@@ -217,21 +217,15 @@ export function ChatView({ conv, totalUnread, contacts, myNumber, onBack, onSend
         inputRef.current?.focus();
     }
 
-    function sendText() {
-        const text = draft.trim();
+    function sendText(text: string) {
         if (!text && attachments.length === 0) return;
         attachments.forEach(url => send({ kind: 'image', gifUrl: url, body: t('messages.photoPreview', '📷 Photo') }));
         if (text) send({ body: text, kind: 'text' });
-        setDraft('');
         setAttachments([]);
     }
 
     function removeAttachment(idx: number) {
         setAttachments(prev => prev.filter((_, i) => i !== idx));
-    }
-
-    function handleKey(e: React.KeyboardEvent) {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
     }
 
     const name = conv.groupName ?? conv.participants[0]?.name ?? t('messages.unknown', 'Unknown');
@@ -264,6 +258,7 @@ export function ChatView({ conv, totalUnread, contacts, myNumber, onBack, onSend
 
     const items = useMemo<RenderItem[]>(() => {
         const out: RenderItem[] = [];
+        const byId = new Map(conv.participants.map(p => [p.id, p]));
         messages.forEach((msg, i) => {
             const prev = messages[i - 1];
             const next = messages[i + 1];
@@ -271,7 +266,7 @@ export function ChatView({ conv, totalUnread, contacts, myNumber, onBack, onSend
                 out.push({ kind: 'separator', ts: msg.ts });
             }
             const isLast  = !next || next.from !== msg.from || next.ts - msg.ts > 60_000;
-            const contact = conv.participants.find(p => p.id === msg.from);
+            const contact = byId.get(msg.from);
             out.push({ kind: 'msg', msg, isLast, contact });
         });
         return out;
@@ -438,7 +433,7 @@ export function ChatView({ conv, totalUnread, contacts, myNumber, onBack, onSend
             <div className="relative shrink-0">
                 {panel === 'emoji' && (
                     <div className="absolute inset-x-0 bottom-full z-20">
-                        <EmojiPanel isDark={isDark} onSelect={e => setDraft(d => d + e)} />
+                        <EmojiPanel isDark={isDark} onSelect={e => composerRef.current?.append(e)} />
                     </div>
                 )}
 
@@ -477,32 +472,15 @@ export function ChatView({ conv, totalUnread, contacts, myNumber, onBack, onSend
                     </div>
                 )}
 
-                <div className="px-3 pb-2 pt-1.5">
-                    <div
-                        className={`flex items-center gap-1 rounded-[22px] bg-base py-[9px] pl-4 dark:bg-surface ${draft.trim() || attachments.length ? 'pr-[5px]' : 'pr-4'}`}
-                        style={{ boxShadow: `inset 0 0 0 var(--hairline-w, 1px) ${composerBdr}` }}
-                    >
-                        <input
-                            ref={inputRef}
-                            type="text"
-                            value={draft}
-                            onChange={e => setDraft(e.target.value)}
-                            onKeyDown={handleKey}
-                            onFocus={() => setPanel(null)}
-                            placeholder={t('messages.textMessagePlaceholder', 'Text Message')}
-                            className="min-w-0 flex-1 bg-transparent py-[5px] text-[18px] text-black dark:text-white placeholder-black/35 dark:placeholder-white/35 outline-none"
-                        />
-                        {(draft.trim() || attachments.length > 0) && (
-                            <button
-                                type="button"
-                                onClick={sendText}
-                                className="flex h-[33px] w-[33px] shrink-0 items-center justify-center rounded-full bg-ios-blue active:opacity-70"
-                            >
-                                <ArrowUp className="h-[19px] w-[19px] text-white" strokeWidth={2.75} />
-                            </button>
-                        )}
-                    </div>
-                </div>
+                <Composer
+                    ref={composerRef}
+                    convId={conv.id}
+                    inputRef={inputRef}
+                    hasAttachments={attachments.length > 0}
+                    borderColor={composerBdr}
+                    onFocus={() => setPanel(null)}
+                    onSendText={sendText}
+                />
 
                 <div
                     className="flex items-center justify-around px-4 pb-11 pt-2.5"
@@ -644,6 +622,26 @@ export function ChatView({ conv, totalUnread, contacts, myNumber, onBack, onSend
                     confirmLabel={confirmLiveShare.exists ? t('messages.share', 'Share') : t('messages.sendRequest', 'Send Request')}
                     onCancel={() => setConfirmLiveShare(null)}
                     onConfirm={() => { startLiveShare(confirmLiveShare); setConfirmLiveShare(null); }}
+                />
+            )}
+
+            {callConfirm && (
+                <AlertDialog
+                    title={callConfirm === 'video' ? t('messages.videoCall', 'Video Call') : t('messages.call', 'Call')}
+                    message={callConfirm === 'video'
+                        ? t('messages.confirmVideoCall', 'Are you sure you want to video call {name}?', { name })
+                        : t('messages.confirmCall', 'Call {name}?', { name })}
+                    cancelLabel={t('common.cancel', 'Cancel')}
+                    confirmLabel={callConfirm === 'video' ? t('messages.videoCall', 'Video Call') : t('messages.call', 'Call')}
+                    onCancel={() => setCallConfirm(null)}
+                    onConfirm={() => {
+                        const num = conv.participants[0]?.phone ?? conv.participants[0]?.id;
+                        setCallConfirm(null);
+                        if (!num) return;
+                        void dialCall(num, name).then(res => {
+                            if (!res.success) setDialError(failText(res, t('messages.unableToPlaceCall', 'Unable to place call')));
+                        });
+                    }}
                 />
             )}
 

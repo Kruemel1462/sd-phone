@@ -11,6 +11,8 @@ import { AppIconSVG } from '@/shell/AppIconSVG';
 import { formatPhone } from '@/lib/phone';
 import { useStreamerHidden } from '@/stores/themeStore';
 import { HIDDEN_TEXT } from '@/shell/streamerMode';
+import { failText } from '@/core/api';
+import { StatusBarSpacer } from '@/ui/StatusBarSpacer';
 
 interface AppAuthField {
     key:         string;
@@ -122,7 +124,7 @@ export function AppAuth({ appName, tagline, icon, theme, fields, onAuthed, onDis
             setQuickBusy(false);
             if (!res.ok) {
                 setScreen('login');
-                setNotice(res.message ?? t('common.savedLoginFailed', 'The saved login did not work. Enter your password.'));
+                setNotice(failText(res, t('common.savedLoginFailed', 'The saved login did not work. Enter your password.')));
                 return;
             }
         }
@@ -329,7 +331,7 @@ function Welcome({ appName, tagline, icon, theme, onCreate, onLogin, onForgot, o
             className={`relative flex h-full flex-col ${light ? 'text-white' : 'text-black'}`}
             style={{ background: theme.welcomeBg }}
         >
-            <div className="h-[54px] shrink-0" aria-hidden />
+            <StatusBarSpacer />
             {onDismiss && (
                 <button
                     type="button"
@@ -483,7 +485,7 @@ function AuthForm({ mode, appName, icon, theme, fields, notice, myNumber, myEmai
         const res = await onPickAccount(username);
         setPicking(null);
         if (res.ok) onPicked?.();
-        else setPickError(res.message ?? t('common.couldNotSignIn', 'Could not sign in to that account'));
+        else setPickError(failText(res, t('common.couldNotSignIn', 'Could not sign in to that account')));
     }
     const hasPassword = isCreate && fields.some(f => f.type === 'password');
 
@@ -586,7 +588,7 @@ function AuthForm({ mode, appName, icon, theme, fields, notice, myNumber, myEmai
         const pick = (...keys: string[]) => keys.find(k => shown.some(f => f.key === k)) ?? null;
         if (res.field) { const k = pick(res.field); if (k) return k; }
         if (!isCreate) return null;
-        const m = (res.message ?? '').toLowerCase();
+        const m = (failText(res, '')).toLowerCase();
         if (/already created|recover the account|wrong username or password/.test(m)) return null;
         if (/password/.test(m))                 { const k = pick('password');         if (k) return k; }
         if (/username|letters, numbers/.test(m)){ const k = pick('username', 'email'); if (k) return k; }
@@ -622,7 +624,7 @@ function AuthForm({ mode, appName, icon, theme, fields, notice, myNumber, myEmai
             if (!res.ok) {
                 const key = serverErrorField(res);
                 if (key) {
-                    setFieldErrors({ [key]: res.message ?? t('common.pleaseCheckField', 'Please check this field') });
+                    setFieldErrors({ [key]: failText(res, t('common.pleaseCheckField', 'Please check this field'))});
                     const el = inputs.current[key];
                     el?.scrollIntoView({ block: 'nearest' });
                     el?.focus({ preventScroll: true });
@@ -631,7 +633,7 @@ function AuthForm({ mode, appName, icon, theme, fields, notice, myNumber, myEmai
                     const pw = shown.find(f => f.type === 'password');
                     if (pw) inputs.current[pw.key]?.focus({ preventScroll: true });
                 } else {
-                    setError(res.message ?? t('common.somethingWentWrong', 'Something went wrong. Please try again.'));
+                    setError(failText(res, t('common.somethingWentWrong', 'Something went wrong. Please try again.')));
                 }
                 return;
             }
@@ -641,7 +643,7 @@ function AuthForm({ mode, appName, icon, theme, fields, notice, myNumber, myEmai
 
     return (
         <div className="relative flex h-full flex-col text-black" style={{ background: formBg }}>
-            <div className="h-[54px] shrink-0" aria-hidden />
+            <StatusBarSpacer />
             <header className="flex items-center px-3 py-2">
                 <button type="button" onClick={onBack} className="flex items-center active:opacity-60" style={{ color: theme.accent }}>
                     <ChevronLeft className="h-[28px] w-[28px]" strokeWidth={2.4} />
@@ -798,7 +800,7 @@ function ResetForm({ phase, appName, icon, theme, identity, onIdentity, myNumber
         setBusy(true);
         const res = await onRequestReset(identity.trim());
         setBusy(false);
-        if (!res.ok) { setError(res.message ?? t('common.somethingWentWrong', 'Something went wrong. Please try again.')); return; }
+        if (!res.ok) { setError(failText(res, t('common.somethingWentWrong', 'Something went wrong. Please try again.'))); return; }
         setError(null);
         setSentVia(res.channel ?? (identity.includes('@') ? 'email' : 'sms'));
         onAdvance();
@@ -812,7 +814,7 @@ function ResetForm({ phase, appName, icon, theme, identity, onIdentity, myNumber
         setBusy(true);
         const res = await onConfirmReset(identity.trim(), code.trim(), password);
         setBusy(false);
-        if (!res.ok) { setError(res.message ?? t('common.somethingWentWrong', 'Something went wrong. Please try again.')); return; }
+        if (!res.ok) { setError(failText(res, t('common.somethingWentWrong', 'Something went wrong. Please try again.'))); return; }
         setCode(''); setPassword(''); setConfirm(''); setSentVia(null);
         onDone();
     }
@@ -823,7 +825,7 @@ function ResetForm({ phase, appName, icon, theme, identity, onIdentity, myNumber
 
     return (
         <div className="relative flex h-full flex-col text-black" style={{ background: formBg }}>
-            <div className="h-[54px] shrink-0" aria-hidden />
+            <StatusBarSpacer />
             <header className="flex items-center px-3 py-2">
                 <button type="button" onClick={() => { setError(null); onBack(); }} className="flex items-center active:opacity-60" style={{ color: theme.accent }}>
                     <ChevronLeft className="h-[28px] w-[28px]" strokeWidth={2.4} />
@@ -1020,7 +1022,7 @@ export function ChangePasswordForm({ appName, icon, theme, identity, savedPasswo
 
     return (
         <div className="absolute inset-0 z-40 flex flex-col text-black" style={{ background: formBg, ...pageStyle }}>
-            <div className="h-[54px] shrink-0" aria-hidden />
+            <StatusBarSpacer />
             <header className="flex items-center px-3 py-2">
                 <button type="button" onClick={goBack} className="flex items-center active:opacity-60" style={{ color: theme.accent }}>
                     <ChevronLeft className="h-[28px] w-[28px]" strokeWidth={2.4} />

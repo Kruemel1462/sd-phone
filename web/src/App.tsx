@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState  } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 
 import { device } from '@device';
@@ -6,16 +6,16 @@ import { gridFor, gridForDock } from '@/device/grid';
 import { refitLayout } from '@/shell/widgets/geometry';
 import { isCustomPaletteId, rampFor, rampVars } from '@/apps/settings/appearance/paletteRamp';
 import { accentVars } from '@/apps/settings/appearance/accentRamp';
-import { AdminPanel } from '@/admin/AdminPanel';
 import { demoAdminOnly } from '@/core/demo';
-import { PayphoneUI } from '@/payphone/PayphoneUI';
-import { RaceOverlay } from '@/apps/racing/hud/RaceOverlay';
+import { registerRuntimeLocales, setAppLabelSource, t } from '@/i18n';
 import { CallLayer } from '@/apps/phone/CallLayer';
 import { CallPeekBanner } from '@/apps/phone/CallPeekBanner';
 import { useCallRing } from '@/apps/phone/calls/useCallRing';
 import { NotificationHost, type NotificationItem } from '@/shell/Notifications';
 import { AirShareCard, type AirShareRequest } from '@/shared/AirShare';
 import { SignRequestLayer, type SignRequestData } from '@/apps/documents/SignRequestLayer';
+import { ReceivedIdLayer } from '@/shell/ReceivedIdLayer';
+import { useIdStore } from '@/stores/idStore';
 import { ControlCenter, ControlCenterHotzone } from '@/shell/ControlCenter';
 import { NotificationCenter, NotificationCenterHotzone } from '@/shell/NotificationCenter';
 import { MusicProvider, useMusic } from '@/apps/music/MusicContext';
@@ -54,6 +54,7 @@ import { fetchNui, isFiveM } from '@/core/nui';
 import { usePhoneReset, type PhoneResetScope } from '@/core/phoneReset';
 import { resetAuth } from '@/stores/authStore';
 import { setMailDomain } from '@/core/accountsApi';
+import { setCasinoGames } from '@/apps/casino/casinoApi';
 import { setMusicSources } from '@/apps/music/data';
 import { setNumberFormat } from '@/lib/phone';
 import { cancelSmoothScroll, shiftWheelDelta, smoothScrollBy, verticalScrollerFor, wheelDelta } from '@/lib/wheel';
@@ -80,6 +81,8 @@ import { tmFinish, useTimer } from '@/stores/timerStore';
 import { isRepeating } from '@/apps/clock/data';
 import type { AlarmDef } from '@/apps/clock/data';
 
+setAppLabelSource(() => useThemeStore.getState().appLabels);
+
 const PEEK_FALLBACK_WALL = 'lockscreen.jpg';
 
 
@@ -93,6 +96,10 @@ const SETUP_KEY_BASE = 'sd-phone:setup:v1';
 // so a new SIM shows the new-phone setup while switching back to a known phone doesn't. Legacy
 // mode (no SIM feature) keeps the bare key.
 let setupProfile = '';
+const AdminPanel  = lazy(() => import('@/admin/AdminPanel').then(m => ({ default: m.AdminPanel })));
+const PayphoneUI  = lazy(() => import('@/payphone/PayphoneUI').then(m => ({ default: m.PayphoneUI })));
+const RaceOverlay = lazy(() => import('@/apps/racing/hud/RaceOverlay').then(m => ({ default: m.RaceOverlay })));
+
 function setSetupProfile(number: string | null | undefined): void {
     setupProfile = number ?? '';
 }
@@ -194,9 +201,11 @@ export function App() {
                 <MusicProvider>
                     <BootReplayButton />
                     {!demoAdminOnly && <AppContent />}
-                    {device.admin && <AdminPanel />}
-                    {!demoAdminOnly && device.payphone && <PayphoneUI />}
-                    {!demoAdminOnly && device.id === 'phone' && <RaceOverlay />}
+                    <Suspense fallback={null}>
+                        {device.admin && <AdminPanel />}
+                        {!demoAdminOnly && device.payphone && <PayphoneUI />}
+                        {!demoAdminOnly && device.id === 'phone' && <RaceOverlay />}
+                    </Suspense>
                 </MusicProvider>
             </LockscreenWidgetsProvider>
         </ThemeProvider>
@@ -445,10 +454,12 @@ function AppContent() {
 
     useNuiEvent('sd-phone:open', useCallback((data) => {
         if (!data) return;
+        registerRuntimeLocales(data.locales);
         if (data.locale) useLocaleStore.getState().applyServerDefault(data.locale);   // server default, unless the player already picked their own
         if (data.mailDomain) setMailDomain(data.mailDomain);
         if (data.number) setNumberFormat(data.number.formats, data.number.length);
         setMusicSources(data.music);
+        setCasinoGames(data.casino?.games);
         setBootScreenEnabled(data.bootScreen !== false);
         useWifiStore.getState().setConfigured(data.wifiConfigured === true);
         useBluetoothStore.getState().setConfigured(data.bluetoothConfigured === true);
@@ -542,7 +553,7 @@ function AppContent() {
         const lib = useMusicLibrary.getState();
         if (data.kind === 'track' && data.track) lib.addReceivedTracks([data.track]);
         else if (data.kind === 'playlist' && Array.isArray(data.tracks)) {
-            lib.addReceivedPlaylist(data.name ?? 'Shared Playlist', data.tracks);
+            lib.addReceivedPlaylist(data.name ?? t('music.sharedPlaylist', 'Shared Playlist'), data.tracks);
         }
     }, []));
 
@@ -1154,7 +1165,7 @@ function AppContent() {
             const tones = useThemeStore.getState();
             playOnce(resolveTone('notification', tones.notificationTone, tones.customNotificationTones).url, tones.ringtoneVol / 100);
         } else {
-            window.postMessage({ action: 'sd-phone:notification', data: { app: 'clock', appId: 'clock', title: 'Timer', body: 'Your timer has been completed' } }, '*');
+            window.postMessage({ action: 'sd-phone:notification', data: { app: 'clock', appId: 'clock', title: t('clock.timer', 'Timer'), body: t('clock.timerDoneBody', 'Your timer has been completed') } }, '*');
         }
     }, []);
     useEffect(() => {
@@ -1178,6 +1189,15 @@ function AppContent() {
     useNuiEvent('sd-phone:documents:signRequest', useCallback((data) => {
         setSignReqs(prev => (prev.some(r => r.requestId === data.requestId) ? prev : [...prev, data]));
     }, []));
+
+    const addShownId  = useIdStore(s => s.add);
+    const markIdSeen  = useIdStore(s => s.markSeen);
+    const shownIdKey  = useIdStore(s => s.unseen);
+    const shownIds    = useIdStore(s => s.received);
+    const shownIdCard = shownIdKey ? shownIds.find(r => r.id === shownIdKey) ?? null : null;
+    useNuiEvent('sd-phone:id:received', useCallback((data) => {
+        if (data && data.card) addShownId(data);
+    }, [addShownId]));
 
     const warmedImages = useRef<Map<string, HTMLImageElement>>(new Map());
     const warmImage = useCallback((src: string) => {
@@ -1239,7 +1259,8 @@ function AppContent() {
     useEffect(() => {
         if (!view || preloadArmed.current) return;
         preloadArmed.current = true;
-        const t = window.setTimeout(preloadAllApps, 1500);
+        const ids = view.apps.filter(a => a.base || installedApps.has(a.id)).map(a => a.id);
+        const t = window.setTimeout(() => preloadAllApps(ids), 1500);
         return () => window.clearTimeout(t);
     }, [view]);
 
@@ -1703,6 +1724,10 @@ function AppContent() {
                         request={signReqs[0]}
                         onDone={() => setSignReqs(prev => prev.slice(1))}
                     />
+                )}
+
+                {shownIdCard && (
+                    <ReceivedIdLayer key={shownIdCard.id} shown={shownIdCard} onDone={markIdSeen} />
                 )}
 
                 {!showSetup && (

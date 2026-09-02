@@ -22,6 +22,7 @@ import { resolveStyle, type CardStyle } from './bankBrands';
 import { TxRows } from './TxRow';
 import { InvoicesTab } from './InvoicesTab';
 import { TabBar, type TabBarItem } from '@/ui/TabBar';
+import { StatusBarSpacer } from '@/ui/StatusBarSpacer';
 
 type BankingTab = 'home' | 'invoices';
 
@@ -101,7 +102,7 @@ export function Banking({ onClose: _onClose }: { onClose: () => void }) {
 
     return (
         <div className="absolute inset-0 z-10 flex flex-col bg-base text-black dark:text-white">
-            <div className="h-[54px] shrink-0" aria-hidden />
+            <StatusBarSpacer />
 
             {tab === 'invoices' ? (
                 <div key="invoices" className="flex min-h-0 flex-1 flex-col animate-swipe-in-left">
@@ -123,7 +124,7 @@ export function Banking({ onClose: _onClose }: { onClose: () => void }) {
                     <button
                         type="button"
                         onClick={() => setPickingCard(true)}
-                        aria-label={t('banking.chooseCard', 'Choose Your Bank')}
+                        aria-label={t('banking.chooseBank', 'Choose Your Bank')}
                         className="block w-full rounded-[20px] transition-transform active:scale-[0.985]"
                     >
                         <BankCard holder={holder} last4={cardLast4} expiry={CARD_EXPIRY} style={cardStyle} />

@@ -4,6 +4,8 @@
 local companion = require 'client.companion'
 ---@type table sd-phone config root (configs/config.lua).
 local config = require 'configs.config'
+---@type table Locale bridge (bridge.shared.locale): which catalogues this install ships.
+local locale = require 'bridge.shared.locale'
 ---@type table Notify bridge (bridge.client.notify): backend-agnostic on-screen toasts.
 local notify = require 'bridge.client.notify'
 
@@ -72,6 +74,15 @@ end
 -- NOT, because YouTube ids are case-sensitive and folding them would let 'AbC' match 'abc'.
 ---@type { youtube: boolean, hosts: string[], videos: string[] }
 local MUSIC_SOURCES = {}
+
+---@type string[] Casino games this server offers, in lobby order. A game missing from
+---configs/casino.lua Games counts as on, so an older config keeps every game.
+local CASINO_GAMES = {}
+for _, id in ipairs({ 'blackjack', 'holdem', 'crash', 'baccarat', 'roulette', 'slots' }) do
+    if (((config.Casino or {}).Games or {})[id]) ~= false then
+        CASINO_GAMES[#CASINO_GAMES + 1] = id
+    end
+end
 do
     local cfg = type(config.Music) == 'table' and config.Music or {}
     local hosts = {}
@@ -159,6 +170,7 @@ require 'client.apps.photogram'
 require 'client.apps.vibez'
 require 'client.apps.voice'
 require 'client.apps.streaks'
+require 'client.apps.id'
 require 'client.apps.mdt'
 require 'client.apps.cctv'
 require 'client.cctvplace'
@@ -448,7 +460,7 @@ local function OpenPhone()
     if phoneState.open then return end
 
     if phoneDisabled then
-        notify.show({ description = 'You can\'t use your phone right now.', type = 'error' })
+        notify.show({ description = locale.t('phone.blocked_dead', 'You can\'t use your phone right now.'), type = 'error' })
         return
     end
 
@@ -460,11 +472,11 @@ local function OpenPhone()
     local ped = cache.ped
 
     if config.Phone.BlockWhileDead and IsEntityDead(ped) then
-        notify.show({ description = 'You can\'t use your phone right now.', type = 'error' })
+        notify.show({ description = locale.t('phone.blocked_dead', 'You can\'t use your phone right now.'), type = 'error' })
         return
     end
     if config.Phone.BlockWhileSwimming and IsPedSwimming(ped) then
-        notify.show({ description = 'You can\'t use your phone while swimming.', type = 'error' })
+        notify.show({ description = locale.t('phone.blocked_swim', 'You can\'t use your phone while swimming.'), type = 'error' })
         return
     end
 
@@ -493,6 +505,7 @@ local function OpenPhone()
         action = 'sd-phone:open',
         data   = {
             locale    = config.Locale,
+            locales   = locale.available(),
             locked    = phoneState.locked,
             battery   = phoneState.battery,
             frameColor = currentFrameColor,
@@ -509,6 +522,7 @@ local function OpenPhone()
             mailDomain = config.Mail.Domain,
             number    = NUMBER_FORMAT,
             music     = MUSIC_SOURCES,
+            casino    = { games = CASINO_GAMES },
             bootScreen = config.Phone.BootScreen ~= false,
             wallpaper = {
                 lock = config.Lockscreen.Wallpaper,
@@ -586,7 +600,7 @@ local function TogglePhone()
 
     local res = lib.callback.await('sd-phone:server:phone:resolveOpen', false, currentFrameColor)
     if not res then
-        notify.show({ description = 'You don\'t have a phone.', type = 'error' })
+        notify.show({ description = locale.t('phone.noPhone', 'You don\'t have a phone.'), type = 'error' })
         return
     end
     local color = res

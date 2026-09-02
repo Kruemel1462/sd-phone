@@ -25,17 +25,9 @@ RegisterNetEvent('sd-phone:client:photos:added', function(photo)
     SendNUIMessage({ action = 'sd-phone:photos:added', data = photo })
 end)
 
----Server-Push: ein Upload wurde abgewiesen oder ist fehlgeschlagen. Ohne diese Meldung bricht
----die Kamera stumm ab und der Spieler haelt es fuer einen Wackler.
----@param message string Grund im Klartext
-RegisterNetEvent('sd-phone:client:photos:uploadFailed', function(message)
-    notify.show({
-        title       = 'Kamera',
-        description = message or 'Upload fehlgeschlagen.',
-        type        = 'error',
-    })
-
-    -- Auch an die NUI: die Kamera haelt ihren Ausloeser gesperrt, bis der Server geantwortet
-    -- hat. Ohne diese Nachricht bliebe sie es bis zum Sicherheits-Timeout.
-    SendNUIMessage({ action = 'sd-phone:photos:uploadFailed', data = message })
+---Server push: a capture upload will not arrive. Carries a stable reason code the Camera turns
+---into a translated line, so the shutter overlay can say why instead of timing out in silence.
+---@param payload { code: string } reason token from server/photos/init.lua
+RegisterNetEvent('sd-phone:client:photos:uploadFailed', function(payload)
+    SendNUIMessage({ action = 'sd-phone:photos:uploadFailed', data = payload })
 end)

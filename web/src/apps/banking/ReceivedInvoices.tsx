@@ -10,6 +10,7 @@ import type { Contact as PhoneContact } from '@/apps/phone/data';
 import { formatMoney } from './data';
 import { useStreamerHidden } from '@/stores/themeStore';
 import { HIDDEN_TEXT } from '@/shell/streamerMode';
+import { failText } from '@/core/api';
 
 // Presentational: the fetch lives in Banking (above the animated tab subtree) so segment
 // switches re-render instantly from props instead of refetching through a loading flash.
@@ -40,7 +41,7 @@ export function ReceivedInvoices({ invoices, loading, onRefetch, onPaid, contact
         const res = await payInvoice(inv.id);
         setBusy(false);
         if (res.success) { onRefetch(); onPaid(); }
-        else setError(res.message ?? t('banking.somethingWentWrong', 'Something went wrong'));
+        else setError(failText(res, t('banking.somethingWentWrong', 'Something went wrong')));
     }
 
     if (invoices.length === 0) {
@@ -59,7 +60,7 @@ export function ReceivedInvoices({ invoices, loading, onRefetch, onPaid, contact
             <div className="overflow-hidden rounded-[16px] bg-surface">
                 {invoices.map((inv, i) => (
                     <div key={inv.id}>
-                        {i > 0 && <div className="pointer-events-none bg-black/10 dark:bg-white/10" style={{ height: '0.5px' }} />}
+                        {i > 0 && <div className="pointer-events-none bg-hairline/10" style={{ height: '0.5px' }} />}
                         <div className="flex items-center gap-3.5 px-4 py-4">
                             {inv.personal ? (
                                 cardOf(inv)

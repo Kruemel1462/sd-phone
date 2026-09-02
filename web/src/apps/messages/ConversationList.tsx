@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { ChevronRight, MessageCircle, SearchX, SquarePen } from 'lucide-react';
 
 import { EmptyState } from '@/ui/EmptyState';
@@ -13,6 +13,7 @@ import { SearchBar } from '@/ui/SearchBar';
 import { AlertDialog } from '@/ui/AlertDialog';
 import { PromptDialog } from '@/ui/PromptDialog';
 import { t } from '@/i18n';
+import { StatusBarSpacer } from '@/ui/StatusBarSpacer';
 
 interface ConversationListProps {
     conversations: Conversation[];
@@ -90,7 +91,7 @@ export function ConversationList({ conversations, onOpen, onCompose, onMarkRead,
 
     return (
         <div className="flex flex-1 flex-col bg-base overflow-hidden">
-            <div className="h-[54px] shrink-0" aria-hidden />
+            <StatusBarSpacer />
 
             <div className="flex items-center justify-between px-5 pb-0.5">
                 <button type="button" onClick={toggleEditing} className="text-[17px] text-ios-blue active:opacity-60">
@@ -118,18 +119,20 @@ export function ConversationList({ conversations, onOpen, onCompose, onMarkRead,
                             // Same containment as the contact rows: a ConvRow is ~20 nodes and a
                             // migrated mailbox has 550 of them, all restyled on every deck
                             // re-parent and .app-anim-flatten toggle. Off-screen rows now skip it.
-                            <div key={c.id} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 100px' }}>
-                                <ConvRow
-                                    conv={c}
-                                    editing={editing}
-                                    selected={selected.has(c.id)}
-                                    onOpen={onOpen}
-                                    onToggleSelect={toggleSelect}
-                                />
+                            <Fragment key={c.id}>
+                                <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 100px' }}>
+                                    <ConvRow
+                                        conv={c}
+                                        editing={editing}
+                                        selected={selected.has(c.id)}
+                                        onOpen={onOpen}
+                                        onToggleSelect={toggleSelect}
+                                    />
+                                </div>
                                 {i < filtered.length - 1 && (
                                     <div className="hairline-y pointer-events-none mx-[6%] bg-hairline/20" />
                                 )}
-                            </div>
+                            </Fragment>
                         ))}
                     </div>
                 )}

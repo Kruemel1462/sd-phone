@@ -29,9 +29,27 @@ local function baseStun()
     return servers
 end
 
----Provisions a Cloudflare Realtime TURN credential set from the sd_cf_turn_* convars. Returns
----nil when unconfigured or on any transport/decode failure.
----@return table|nil iceServers Cloudflare's iceServers object, nil on failure
+---Flattens a provider's iceServers payload into entries RTCPeerConnection accepts. Cloudflare
+---returns an ARRAY (a plain STUN entry plus a credentialled TURN one), so appending the payload
+---whole hands the browser a nested array carrying no `urls`, and RTCPeerConnection rejects the
+---WHOLE configuration with "Malformed RTCIceServer" - the call goes black. A lone entry object is
+---taken too, since that is the shape a hand-rolled or non-Cloudflare provider tends to return.
+---@param payload table|nil decoded `iceServers` value from the provider
+---@return table entries flat array of RTCIceServer tables, empty when none are usable
+local function normalizeIceServers(payload)
+    if type(payload) ~= 'table' then return {} end
+
+    local entries = {}
+    for _, entry in ipairs(payload.urls and { payload } or payload) do
+        if type(entry) == 'table' and entry.urls ~= nil then entries[#entries + 1] = entry end
+    end
+    return entries
+end
+
+---Provisions a Cloudflare Realtime TURN credential set from the sd_cf_turn_* convars. Returns nil
+---when unconfigured, on any transport/decode failure, or when the payload holds no usable entry -
+---all of which cache as a failure rather than serve a list the browser will throw on.
+---@return table|nil entries flat array of RTCIceServer tables, nil on failure
 local function fetchCloudflareTurn()
     local tokenId  = GetConvar('sd_cf_turn_token_id', '')
     local apiToken = GetConvar('sd_cf_turn_api_token', '')
@@ -44,7 +62,8 @@ local function fetchCloudflareTurn()
         function(status, body)
             if status ~= 201 or not body then return p:resolve(nil) end
             local ok, decoded = pcall(json.decode, body)
-            p:resolve(ok and decoded and decoded.iceServers or nil)
+            local entries = ok and decoded and normalizeIceServers(decoded.iceServers) or nil
+            p:resolve(entries and entries[1] and entries or nil)
         end,
         'POST',
         json.encode({ ttl = ttl }),
@@ -72,7 +91,11 @@ function ice.servers()
     local provisioned = true
     if TURN.Provider == 'cloudflare' then
         local ok, turn = pcall(fetchCloudflareTurn)
-        if ok and turn then servers[#servers + 1] = turn else provisioned = false end
+        if ok and turn then
+            for _, entry in ipairs(turn) do servers[#servers + 1] = entry end
+        else
+            provisioned = false
+        end
     end
 
     local ttl = provisioned and ((tonumber(TURN.TtlSeconds) or 86400) - 60) or ICE_FAILURE_TTL

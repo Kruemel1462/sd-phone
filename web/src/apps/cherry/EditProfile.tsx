@@ -10,6 +10,7 @@ import { Toggle } from '@/ui/Toggle';
 import { portalToPhoneScreen } from '@/ui/portal';
 import { cherryBlockedList, cherryUnblock, type BlockedEntry } from './cherryApi';
 import { CHERRY, type Gender, type InterestedIn, type MyProfile } from './data';
+import { StatusBarSpacer } from '@/ui/StatusBarSpacer';
 
 const MAX_PHOTOS = 6;
 
@@ -131,6 +132,7 @@ export function EditProfile({ profile, onChange, onSignOut, onSignOutAll, onSwit
                 <Label>{t('cherry.interestedIn', 'Interested In')}</Label>
                 <Segmented<InterestedIn>
                     options={['Women', 'Men', 'Everyone']}
+                    label={interestedInLabel}
                     value={profile.interestedIn}
                     onChange={v => onChange({ ...profile, interestedIn: v })}
                 />
@@ -138,6 +140,7 @@ export function EditProfile({ profile, onChange, onSignOut, onSignOutAll, onSwit
                 <Label>{t('cherry.gender', 'Gender')}</Label>
                 <Segmented<Gender>
                     options={['Man', 'Woman', 'Nonbinary']}
+                    label={genderLabel}
                     value={profile.gender}
                     onChange={v => onChange({ ...profile, gender: v })}
                 />
@@ -304,7 +307,7 @@ function BlockedSheet({ onClose }: { onClose: () => void }) {
                 willChange: 'transform',
             }}
         >
-            <div className="h-[58px] shrink-0" aria-hidden />
+            <StatusBarSpacer />
             <div className="flex shrink-0 items-center justify-between px-5 pb-3 pt-1">
                 <h2 className="text-[26px] font-bold tracking-tight text-black">{t('cherry.blocked', 'Blocked')}</h2>
                 <button
@@ -374,7 +377,23 @@ function Label({ children }: { children: ReactNode }) {
     return <p className="px-1 pb-2 pt-5 text-[16px] font-semibold text-black/80">{children}</p>;
 }
 
-function Segmented<T extends string>({ options, value, onChange }: { options: T[]; value: T; onChange: (v: T) => void }) {
+function interestedInLabel(v: InterestedIn): string {
+    switch (v) {
+        case 'Women':    return t('cherry.interestedInWomen', 'Women');
+        case 'Men':      return t('cherry.interestedInMen', 'Men');
+        case 'Everyone': return t('cherry.interestedInEveryone', 'Everyone');
+    }
+}
+
+function genderLabel(v: Gender): string {
+    switch (v) {
+        case 'Man':       return t('cherry.genderMan', 'Man');
+        case 'Woman':     return t('cherry.genderWoman', 'Woman');
+        case 'Nonbinary': return t('cherry.genderNonbinary', 'Nonbinary');
+    }
+}
+
+function Segmented<T extends string>({ options, label, value, onChange }: { options: T[]; label: (v: T) => string; value: T; onChange: (v: T) => void }) {
     return (
         <div className="flex gap-1 rounded-[10px] bg-black/[0.05] p-1">
             {options.map(o => (
@@ -384,7 +403,7 @@ function Segmented<T extends string>({ options, value, onChange }: { options: T[
                     onClick={() => onChange(o)}
                     className={`flex-1 rounded-[8px] py-2.5 text-[16px] font-semibold transition ${value === o ? 'bg-white text-black shadow-sm' : 'text-black/50 active:text-black/70'}`}
                 >
-                    {o}
+                    {label(o)}
                 </button>
             ))}
         </div>

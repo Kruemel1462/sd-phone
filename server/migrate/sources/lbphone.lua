@@ -19,6 +19,8 @@ source.markPrefix = 'lbphone'
 
 ---@type { key: string, label: string, run: fun(ctx: table): table }[] Domains, in run order.
 source.ports = {
+    -- First: registers each migrated number in the SIM registry the number porter's rows key on.
+    { key = 'uniquephones', label = 'unique phones', run = require('server.migrate.port.uniquephones').run },
     { key = 'numbers',    label = 'numbers',    run = require('server.migrate.port.numbers').run },
     { key = 'contacts',   label = 'contacts',   run = require('server.migrate.port.contacts').run },
     { key = 'blocked',    label = 'blocked',    run = require('server.migrate.port.blocked').run },
@@ -57,6 +59,7 @@ source.legacyDomains = {
 
 ---@type table<string, string[]> Source tables per domain, for the scan's row counts.
 source.domainSources = {
+    uniquephones = { 'phones' },
     numbers    = { 'phones' },
     contacts   = { 'phone_contacts' },
     blocked    = { 'phone_blocked_numbers' },
@@ -79,12 +82,12 @@ source.domainSources = {
         'tiktok_accounts', 'tiktok_videos', 'tiktok_comments', 'tiktok_likes', 'tiktok_saves',
         'tiktok_comments_likes', 'tiktok_follows', 'tiktok_notifications',
     },
-    mail       = { 'phone_mail_accounts', 'phone_mails' },
-    wallet     = { 'phone_transactions' },
-    voicememos = { 'phone_notes_voice' },
+    mail       = { 'mail_accounts', 'mail_messages' },
+    wallet     = { 'wallet_transactions' },
+    voicememos = { 'voice_memos_recordings' },
     marketplace = { 'phone_marketplace_posts' },
     pages      = { 'phone_yellow_pages_posts' },
-    sessions   = { 'phone_last_phone' },
+    sessions   = { 'logged_in_accounts' },
 }
 
 ---Whether an lb-phone database is present to read from.
@@ -105,8 +108,8 @@ end
 ---@param cfg table config.Migrate
 ---@param framework table framework detection
 ---@return table
-function source.identity(cfg, framework)
-    return identity.build(cfg, framework)
+function source.identity(cfg, framework, opts)
+    return identity.build(cfg, framework, opts)
 end
 
 return source

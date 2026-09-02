@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { LayoutGrid, Play, RotateCw, Sparkles, X, Zap, ZapOff } from 'lucide-react';
+import { AlertTriangle, LayoutGrid, Play, RotateCw, Sparkles, X, Zap, ZapOff } from 'lucide-react';
 
 import { useNuiEvent } from '@/hooks/useNuiEvent';
 import { fetchNui } from '@/core/nui';
@@ -100,10 +100,29 @@ interface Photo {
 
 const MODE_OPTIONS = ['VIDEO', 'PHOTO', 'LANDSCAPE'] as const;
 
-// Reines Sicherheitsnetz: im Normalfall loest 'photos:added' oder 'photos:uploadFailed' die
-// Sperre. Der Wert muss ueber der schlechtesten Uebertragungszeit liegen, sonst gibt die Kamera
-// den Ausloeser frei, waehrend das vorige Bild noch laeuft - genau daran scheiterte das zweite Foto.
-const CAPTURE_TIMEOUT_MS = 30000;
+function modeLabel(mode: typeof MODE_OPTIONS[number]): string {
+    switch (mode) {
+        case 'VIDEO':     return t('camera.modeVideo', 'VIDEO');
+        case 'LANDSCAPE': return t('camera.modeLandscape', 'LANDSCAPE');
+        default:          return t('camera.modePhoto', 'PHOTO');
+    }
+}
+
+const UPLOAD_ERROR_MS = 4200;
+
+function uploadFailureText(code: string | undefined): string {
+    switch (code) {
+        case 'no-key':     return t('camera.uploadFailNoKey', 'This server has not set up media uploads yet.');
+        case 'too-large':  return t('camera.uploadFailTooLarge', 'That capture is too large to upload.');
+        case 'busy':       return t('camera.uploadFailBusy', 'Another upload is still finishing.');
+        case 'rate-limit': return t('camera.uploadFailRateLimit', 'Slow down a moment, then try again.');
+        case 'bad-data':   return t('camera.uploadFailBadData', 'That capture came out corrupted.');
+        case 'save-failed':return t('camera.uploadFailSave', 'Uploaded, but it could not be saved.');
+        default:           return t('camera.uploadFailProvider', 'The upload service did not accept it.');
+    }
+}
+
+const CAPTURE_TIMEOUT_MS = 8000;
 const VIDEO_TIMEOUT_MS   = 45000;
 
 const MAX_REC_MS         = 60000;
@@ -127,6 +146,7 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
 }) {
     const [photos,  setPhotos]  = useState<Photo[]>([]);
     const [pending, setPending] = useState(false);
+    const [uploadError, setUploadError] = useState<string | null>(null);
     const [zoom,    setZoom]    = useState<number>(1);
     const [mode,    setMode]    = useState<typeof MODE_OPTIONS[number]>('PHOTO');
     const [feedReady, setFeedReady] = useState(false);
@@ -165,6 +185,7 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
     useStatusBarLight(true);
 
     const landscape = mode === 'LANDSCAPE';
+    const overlayShown = pending || uploadError !== null;
 
     useEffect(() => {
         if (!photoOnly) return;
@@ -185,6 +206,7 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
     const canvasRef    = useRef<HTMLCanvasElement>(null);
     const viewportRef  = useRef<HTMLDivElement>(null);
     const captureTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const errorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const renderRef    = useRef<GameRender | null>(null);
 
     const recorderRef  = useRef<MediaRecorder | null>(null);
@@ -231,6 +253,7 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
             mixerRef.current?.destroy();
             mixerRef.current = null;
             if (captureTimer.current) clearTimeout(captureTimer.current);
+            if (errorTimer.current) clearTimeout(errorTimer.current);
         };
     }, []);
 
@@ -380,9 +403,19 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
         if (!p.id) return;
         setPhotos(prev => (prev.some(x => x.id === p.id) ? prev : [p, ...prev]));
         setPending(false);
+        setUploadError(null);
         if (captureTimer.current) { clearTimeout(captureTimer.current); captureTimer.current = null; }
+        if (errorTimer.current) { clearTimeout(errorTimer.current); errorTimer.current = null; }
         if (onCapture && p.url) onCapture(p.url);
     }, [onCapture]));
+
+    useNuiEvent('sd-phone:photos:uploadFailed', useCallback((data: { code?: string } | undefined) => {
+        setPending(false);
+        if (captureTimer.current) { clearTimeout(captureTimer.current); captureTimer.current = null; }
+        if (errorTimer.current) clearTimeout(errorTimer.current);
+        setUploadError(uploadFailureText(data?.code));
+        errorTimer.current = setTimeout(() => { setUploadError(null); errorTimer.current = null; }, UPLOAD_ERROR_MS);
+    }, []));
 
     function togglePicker() {
         if (!pickerOpen) setSwatch(grabSwatch());
@@ -447,6 +480,7 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
             const image = grabFrame();
             if (flash) void fetchNui('sd-phone:camera:flash', { on: false });
             if (!image) { setPending(false); return; }
+            setUploadError(null);
 
             const res = await apiCall<void>('sd-phone:camera:capture', { image });
             if (!res.success) { setPending(false); return; }
@@ -685,7 +719,7 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
 
                 {recording && (
                     <div className="absolute left-1/2 top-3 z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 backdrop-blur">
-                        <span className="h-2 w-2 rounded-full bg-[#ff3b30] motion-safe:animate-pulse" />
+                        <span className="h-2 w-2 rounded-full bg-ios-red motion-safe:animate-pulse" />
                         <span className="text-[12px] font-semibold tabular-nums text-white">{formatDuration(recSecs)}</span>
                     </div>
                 )}
@@ -696,12 +730,12 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
                 <div
                     className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3.5 transition-all duration-200 ease-out"
                     style={{
-                        backgroundColor:        pending ? 'rgba(0,0,0,0.72)' : 'rgba(0,0,0,0)',
-                        backdropFilter:         pending ? 'blur(6px)' : 'blur(0px)',
-                        WebkitBackdropFilter:   pending ? 'blur(6px)' : 'blur(0px)',
-                        pointerEvents:          pending ? 'auto' : 'none',
+                        backgroundColor:        overlayShown ? 'rgba(0,0,0,0.72)' : 'rgba(0,0,0,0)',
+                        backdropFilter:         overlayShown ? 'blur(6px)' : 'blur(0px)',
+                        WebkitBackdropFilter:   overlayShown ? 'blur(6px)' : 'blur(0px)',
+                        pointerEvents:          overlayShown ? 'auto' : 'none',
                     }}
-                    aria-hidden={!pending}
+                    aria-hidden={!overlayShown}
                     aria-busy={pending}
                 >
                     <div
@@ -720,6 +754,16 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
                         </svg>
                         <span className="text-[14px] font-medium text-white/90">
                             {t('camera.uploading', 'Uploading…')}
+                        </span>
+                    </div>
+                    <div
+                        className="absolute flex max-w-[240px] flex-col items-center gap-2.5 px-6 text-center transition-opacity duration-200 ease-out"
+                        style={{ opacity: uploadError ? 1 : 0 }}
+                        role="alert"
+                    >
+                        <AlertTriangle size={30} strokeWidth={2} className="text-[#FFD60A]" />
+                        <span className="text-[14px] font-medium leading-snug text-white/90">
+                            {uploadError}
                         </span>
                     </div>
                 </div>
@@ -807,7 +851,7 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
                                         isActive ? 'text-[#FFD60A]' : 'text-white/55 hover:text-white/85',
                                     ].join(' ')}
                                 >
-                                    {m}
+                                    {modeLabel(m)}
                                 </button>
                             );
                         })}
@@ -862,8 +906,8 @@ export function Camera({ onClose, onLandscapeChange, onOpenApp, photoOnly = fals
                             <span
                                 className={
                                     recording
-                                        ? 'block h-[26px] w-[26px] rounded-[7px] bg-[#ff3b30] transition-all duration-150'
-                                        : 'block h-[61px] w-[61px] rounded-full bg-[#ff3b30] transition-all duration-150 group-active:scale-90'
+                                        ? 'block h-[26px] w-[26px] rounded-[7px] bg-ios-red transition-all duration-150'
+                                        : 'block h-[61px] w-[61px] rounded-full bg-ios-red transition-all duration-150 group-active:scale-90'
                                 }
                             />
                         ) : (

@@ -51,6 +51,14 @@ return {
         -- lengths, and both keep working everywhere.
         Length = 10,
 
+        -- Area code for new numbers, blank by default. It is part of Length
+        -- rather than added to it: '555' with Length 10 gives 555 plus 7 random
+        -- digits, so 5551234567. Formats below are unaffected.
+        --
+        -- It cannot start with 0 or 1 and must leave 4 digits random; break
+        -- either rule and it is ignored, with the reason printed on boot.
+        Prefix = '',
+
         -- How a number is displayed, keyed by how many digits it has. Each X is
         -- replaced by the next digit and every other character is printed
         -- literally, so '+44 XXXX XXXXXX', 'XXX-XXXX' and '(XXX) XXX-XXXX' all
@@ -120,7 +128,10 @@ return {
     -- Without one they get a connected call with a black picture, while their own self-view
     -- still looks fine, because the self-view never leaves their machine.
     --
-    -- One TURN setup serves everything (video calls, nearby-voice capture, Live, bodycams).
+    -- TURN is only for video calls and nearby-voice capture, the two things that talk browser to
+    -- browser. Live broadcasts and MDT bodycams do NOT need it: Live sends its picture through the
+    -- game server, and a bodycam is drawn on the watching terminal itself.
+    --
     -- Configure it once in configs/voice.lua; the free Cloudflare path is two convars:
     --     set sd_cf_turn_token_id  "your-cloudflare-turn-token-id"
     --     set sd_cf_turn_api_token "your-cloudflare-turn-api-token"

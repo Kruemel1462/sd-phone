@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, Copy, Heart, MoreHorizontal, Wallpaper } from 'lucide-react';
 
-import { t } from '@/i18n';
+import { getLocaleTag, t } from '@/i18n';
 import { apiSharePhoto, type Photo } from '@/core/photosApi';
 import { useThemeStore } from '@/stores/themeStore';
 import { ActionSheet } from '@/ui/ActionSheet';
 import { ShareAction, ShareSheet } from '@/shared/ShareSheet';
 import { useCopied } from '@/hooks/useCopied';
 import { VideoView } from './VideoView';
+import { StatusBarSpacer } from '@/ui/StatusBarSpacer';
 
 function fmtDate(iso: string): string {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return '';
-    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
+    return d.toLocaleDateString(getLocaleTag(), { day: 'numeric', month: 'long' });
 }
 
 function fmtTime(iso: string): string {
@@ -88,7 +89,7 @@ export function PhotoViewer({
             className="absolute inset-0 z-40 flex flex-col bg-base text-black dark:text-white"
             style={{ animation: leaving ? 'photo-out 0.2s ease-in forwards' : 'photo-in 0.24s cubic-bezier(0.22,1,0.36,1)' }}
         >
-            <div className="h-[54px] shrink-0" aria-hidden />
+            <StatusBarSpacer />
 
             <div className="flex h-14 shrink-0 items-center justify-between px-4">
                 <button type="button" onClick={close} aria-label={t('photos.back', 'Back')} className="text-ios-blue">

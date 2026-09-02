@@ -1,13 +1,17 @@
 ---@type table sd-phone config root (configs/config.lua) - config.ApiKeys holds the media token.
 local config = require 'configs.config'
 
+---@type table Qbox CDN provider (server.photos.qbox): the multipart route through the Node helper.
+local qbox = require 'server.photos.qbox'
+
 ---@type table Uploader module; the table returned at end of file.
 local uploader = {}
 
--- Eigener Medienspeicher auf dem VPS (_tools/genesis-cdn). Antwortet bewusst in derselben Form
--- wie Fivemanage: { data = { id, url }, status = "ok" }, deshalb bleibt der Rest der Datei
--- unveraendert. Das Token dazu steht in configs/server/apikeys.lua.
----@type string Upload-Endpunkt.
+---@type table Photos config (configs/photos.lua): which CDN the uploads go to.
+local PHOTOS = type(config.Photos) == 'table' and config.Photos or {}
+
+-- Response shape: { data = { id, url }, status = "ok" }.
+---@type string Fivemanage media upload endpoint (v3 base64 route).
 local UPLOAD_URL = 'https://cdn.metrocityrp.eu/upload'
 
 -- Media key: configs/server/apikeys.lua (FivemanageMedia), else the legacy convar below.
@@ -53,86 +57,40 @@ local function mediaKey()
     return GetConvar(CONVAR_KEY, '')
 end
 
----Setzt EINEN Versuch ab und meldet ueber `done` genau einmal - entweder aus dem HTTP-Callback
----oder aus der Frist, je nachdem was zuerst eintritt.
----@param body string fertiger JSON-Rumpf
----@param key string Medien-Token
----@param timeout integer Frist in Millisekunden
----@param attempt integer laufende Nummer, nur fuer die Logzeile
----@param done fun(url: string|nil, err: string|nil, timedOut: boolean)
-local function attemptUpload(body, key, timeout, attempt, done)
-    ---@type boolean Verhindert, dass Frist und Callback beide melden.
-    local settled = false
-
-    ---@param url string|nil
-    ---@param err string|nil
-    ---@param timedOut boolean
-    local function settle(url, err, timedOut)
-        if settled then return end
-        settled = true
-        done(url, err, timedOut)
-    end
-
-    SetTimeout(timeout, function()
-        if settled then return end
-        print(('^1[sd-phone:photos]^0 [UPLOAD] Versuch %d ohne Antwort nach %d ms - %s')
-            :format(attempt, timeout, UPLOAD_URL))
-        settle(nil, ('Medienspeicher antwortet nicht (%d ms)'):format(timeout), true)
-    end)
-
-    PerformHttpRequest(UPLOAD_URL, function(status, responseBody, _headers)
-        if status ~= 200 and status ~= 201 then
-            settle(nil, ('Medien-Upload fehlgeschlagen: HTTP %s'):format(tostring(status)), false)
-            return
-        end
-
-        if not responseBody or responseBody == '' then
-            settle(nil, 'Leere Antwort vom Medienspeicher', false)
-            return
-        end
-
-        local okJson, decoded = pcall(json.decode, responseBody)
-        if not okJson or type(decoded) ~= 'table' then
-            settle(nil, 'Antwort des Medienspeichers nicht lesbar', false)
-            return
-        end
-
-        local url = type(decoded.data) == 'table' and decoded.data.url or nil
-        if type(url) ~= 'string' or url == '' then
-            settle(nil, 'Medienspeicher lieferte keine URL', false)
-            return
-        end
-
-        settle(url, nil, false)
-    end, 'POST', body, {
-        ['Content-Type']  = 'application/json',
-        ['Authorization'] = key,
-        -- Keine Verbindung wiederverwenden. Das ist die Gegenseite derselben Muenze wie der
-        -- Watchdog oben: eine gepoolte Verbindung, die die Gegenstelle nach ihrem Keep-Alive-
-        -- Fenster geschlossen hat, verschluckt den naechsten Request lautlos. Jeder Upload holt
-        -- sich lieber eine frische Verbindung - bei ein paar Fotos pro Minute kostet das nichts.
-        ['Connection']    = 'close',
-    })
+---Which CDN this server uploads to. Anything other than 'qbox' stays on Fivemanage, so a typo
+---never silently sends media somewhere the owner did not choose.
+---@return 'fivemanage'|'qbox'
+function uploader.provider()
+    return tostring(PHOTOS.Provider or 'fivemanage'):lower() == 'qbox' and 'qbox' or 'fivemanage'
 end
 
----Uploads a base64 data-URL to the media store and hands back the hosted CDN URL. Asynchronous:
----calls `cb(url|nil, err)` exactly once. Eine haengende Anfrage laeuft nach einer Frist in einen
----Fehler statt ewig offen zu bleiben, und wird einmal wiederholt.
+---True when the active provider has a token set. Read at boot so a server missing its key is
+---told once at startup, instead of every player discovering it as a capture that never lands.
+---@return boolean
+function uploader.configured()
+    if uploader.provider() == 'qbox' then return qbox.configured() end
+    return mediaKey() ~= ''
+end
+
+---Uploads a base64 data-URL to Fivemanage and hands back the hosted CDN URL. Asynchronous:
+---calls `cb(url|nil, err, code)` exactly once. `err` is the human sentence the recording and
+---bodycam UIs already surface; `code` is a stable token the phone maps to a translated line, so
+---a caller can localise the reason without matching on English prose.
 ---@param base64Image string media as a base64 data-URL (data:image/...;base64,...)
 ---@param filename string suggested filename stored alongside the upload
----@param cb fun(url: string|nil, err: string|nil)
-function uploader.uploadMedia(base64Image, filename, cb)
+---@param cb fun(url: string|nil, err: string|nil, code: 'no-key'|'bad-data'|'provider'|nil)
+local function uploadFivemanage(base64Image, filename, cb)
     local key = mediaKey()
 
     if key == '' then
-        print('^1[sd-phone:photos]^0 aborting — no Fivemanage key configured')
-        cb(nil, 'No Fivemanage key configured. Set FivemanageMedia in configs/server/apikeys.lua.')
+        print('^1[sd-phone:photos]^0 [UPLOAD] aborting: no Fivemanage media key. Set FivemanageMedia in configs/server/apikeys.lua, or the sd_fivemanage_key convar.')
+        cb(nil, 'No Fivemanage media key configured on this server', 'no-key')
         return
     end
 
     if type(base64Image) ~= 'string' or base64Image == '' then
-        print('^1[sd-phone:photos]^0 aborting — empty image payload')
-        cb(nil, 'Empty image payload')
+        print('^1[sd-phone:photos]^0 [UPLOAD] aborting: empty media payload')
+        cb(nil, 'Empty media payload', 'bad-data')
         return
     end
 
@@ -146,31 +104,50 @@ function uploader.uploadMedia(base64Image, filename, cb)
     print(('^3[sd-phone:photos]^0 [UPLOAD] -> %s (%d Bytes, Frist %d ms)')
         :format(UPLOAD_URL, #body, timeout))
 
-    ---@type integer Bisherige Versuche.
-    local tries = 0
+        -- Each branch reports the same 'provider' code to the player, who can act on none of
+        -- them, while the console line names the one that actually happened.
+        if status ~= 200 and status ~= 201 then
+            print(('^1[sd-phone:photos]^0 [UPLOAD] Fivemanage rejected the upload: HTTP %s %s')
+                :format(tostring(status), tostring(responseBody)))
+            cb(nil, ('Fivemanage upload failed: HTTP %s'):format(tostring(status)), 'provider')
+            return
+        end
 
-    local function run()
-        tries = tries + 1
-        attemptUpload(body, key, timeout, tries, function(url, err, timedOut)
-            -- Nur eine abgelaufene Frist wird wiederholt. Ein HTTP 401 oder 413 kommt beim
-            -- zweiten Mal genauso zurueck und waere nur verlorene Zeit.
-            if timedOut and tries <= RETRIES then
-                print(('^3[sd-phone:photos]^0 [UPLOAD] Wiederholung %d/%d'):format(tries, RETRIES))
-                run()
-                return
-            end
+        if not responseBody or responseBody == '' then
+            print('^1[sd-phone:photos]^0 [UPLOAD] Fivemanage returned an empty response body')
+            cb(nil, 'Empty response from Fivemanage', 'provider')
+            return
+        end
 
-            if url then
-                print(('^2[sd-phone:photos]^0 [UPLOAD] ok (Versuch %d) -> %s'):format(tries, url))
-            else
-                print(('^1[sd-phone:photos]^0 [UPLOAD] endgueltig fehlgeschlagen: %s'):format(tostring(err)))
-            end
+        local okJson, decoded = pcall(json.decode, responseBody)
+        if not okJson or type(decoded) ~= 'table' then
+            print(('^1[sd-phone:photos]^0 [UPLOAD] unparseable Fivemanage response: %s')
+                :format(tostring(responseBody)))
+            cb(nil, 'Could not parse the Fivemanage response', 'provider')
+            return
+        end
 
-            cb(url, err)
-        end)
-    end
+        local url = type(decoded.data) == 'table' and decoded.data.url or nil
+        if type(url) ~= 'string' or url == '' then
+            print(('^1[sd-phone:photos]^0 [UPLOAD] Fivemanage returned no URL: %s'):format(tostring(responseBody)))
+            cb(nil, 'Fivemanage returned no URL', 'provider')
+            return
+        end
 
     run()
+end
+
+---Uploads a base64 data-URL to whichever CDN this server is set to and hands back the hosted URL.
+---Asynchronous: calls `cb(url|nil, err, code)` exactly once.
+---@param base64Image string media as a base64 data-URL (data:image/...;base64,...)
+---@param filename string suggested filename stored alongside the upload
+---@param cb fun(url: string|nil, err: string|nil, code: 'no-key'|'bad-data'|'provider'|nil)
+function uploader.uploadMedia(base64Image, filename, cb)
+    if uploader.provider() == 'qbox' then
+        qbox.uploadMedia(base64Image, filename, cb)
+        return
+    end
+    uploadFivemanage(base64Image, filename, cb)
 end
 
 return uploader

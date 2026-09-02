@@ -25,11 +25,20 @@ end
 ---@return { success: true, data?: any }
 function util.ok(data) return { success = true, data = data } end
 
----Failure response envelope - the shape every callback/action returns when it refuses. `message`
----is the already-localised, user-facing reason the UI shows.
----@param message string user-facing failure reason
----@return { success: false, message: string }
-function util.fail(message) return { success = false, message = message } end
+---Failure response envelope - the shape every callback/action returns when it refuses. The server
+---has no per-player language, so it sends both halves: `messageKey` is the catalogue key the NUI
+---resolves against the player's own locale, and `message` is the English text it falls back to.
+---Called with one argument the message is passed through unkeyed and stays English.
+---`vars` fills {placeholder} spans in both halves, so a message carrying a number stays one
+---catalogue entry: fail('contacts.atMost', 'You can store at most {n} contacts', { n = 50 }).
+---@param key string catalogue key, e.g. 'banking.insufficientFunds'
+---@param message? string English text the NUI shows when the key is not in the player's catalogue
+---@param vars? table<string, any> {placeholder} replacements applied by the NUI
+---@return { success: false, messageKey?: string, message: string, messageVars?: table }
+function util.fail(key, message, vars)
+    if message == nil then return { success = false, message = key } end
+    return { success = false, messageKey = key, message = message, messageVars = vars }
+end
 
 ---@type string Alphabet for generated row ids (base-36, lowercase) - matches the frontend's id shape.
 local ID_CHARS = '0123456789abcdefghijklmnopqrstuvwxyz'
@@ -103,6 +112,33 @@ local LENGTH = math.floor(tonumber(NUMBER.Length) or 10)
 if LENGTH < 3 then LENGTH = 3 end
 if LENGTH > 15 then LENGTH = 15 end
 
+---@type integer Random digits a generated number keeps however long the prefix is. Four leaves ten
+---thousand numbers behind each prefix, which the twenty-attempt uniqueness retry in
+---server.sim.store can still find a free slot in.
+local MIN_RANDOM = 4
+
+---@type string Digits every new number starts with, from config.Phone.Number.Prefix. An unusable
+---prefix is refused outright rather than half-applied, and says so on boot: silently handing out
+---numbers in a shape the server owner did not ask for is worse than ignoring the setting.
+local PREFIX = (function()
+    local raw = (tostring(NUMBER.Prefix or ''):gsub('%D', ''))
+    if raw == '' then return '' end
+
+    local lead = raw:sub(1, 1)
+    if lead == '0' or lead == '1' then
+        print(('^3[sd-phone]^0 Number.Prefix "%s" ignored: it cannot start with 0 or 1, because a leading zero is lost the first time the number passes through tonumber.'):format(raw))
+        return ''
+    end
+    if #raw > LENGTH - MIN_RANDOM then
+        print(('^3[sd-phone]^0 Number.Prefix "%s" ignored: it leaves fewer than %d random digits at Length %d, so numbers would collide.'):format(raw, MIN_RANDOM, LENGTH))
+        return ''
+    end
+    return raw
+end)()
+
+---@type string The configured prefix as it is actually being applied, empty when there is none.
+util.numberPrefix = PREFIX
+
 ---Renders digits into a display pattern: every X takes the next digit, every other character is
 ---literal. Digits past the pattern's last X are appended so nothing is ever silently dropped.
 ---@param pattern string
@@ -135,13 +171,14 @@ function util.formatNumber(number)
     return applyPattern(pattern, d)
 end
 
----A random phone number as bare digits, at the configured length. The leading digit avoids 0 and
----1 so numbers still read like real ones (and so the digit count never shrinks through a
----tonumber round-trip somewhere downstream).
+---A random phone number as bare digits, at the configured length. Without a prefix the leading
+---digit avoids 0 and 1 so numbers still read like real ones (and so the digit count never shrinks
+---through a tonumber round-trip somewhere downstream). With one, the prefix leads and is already
+---held to the same rule.
 ---@return string number bare digits, `config.Phone.Number.Length` of them
 function util.randomNumber()
-    local out = { tostring(math.random(2, 9)) }
-    for i = 2, LENGTH do out[i] = tostring(math.random(0, 9)) end
+    local out = { PREFIX ~= '' and PREFIX or tostring(math.random(2, 9)) }
+    for _ = #out[1] + 1, LENGTH do out[#out + 1] = tostring(math.random(0, 9)) end
     return table.concat(out)
 end
 

@@ -33,7 +33,7 @@ export function Btn({ children, onClick, variant = 'ghost', disabled, busy, clas
             disabled={disabled || busy}
             onClick={onClick}
             className={clsx(
-                'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold transition-colors',
+                'inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold transition-colors',
                 'disabled:cursor-not-allowed disabled:opacity-40',
                 BTN[variant], className,
             )}
@@ -197,7 +197,7 @@ export function useAdminSurface() {
 
 const ModalClose = createContext<() => void>(() => {});
 
-function Modal({ title, children, onClose, width = 'w-[420px]' }: {
+export function Modal({ title, children, onClose, width = 'w-[420px]' }: {
     title: string;
     children: ReactNode;
     onClose: () => void;

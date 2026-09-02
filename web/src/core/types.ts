@@ -14,6 +14,7 @@ import type { Reaction } from '@/shared/chat/data';
 
 export interface OpenPayload {
     locale?: string;
+    locales?: string[];
     locked: boolean;
     battery: number;
     frameColor?: string;
@@ -36,6 +37,9 @@ export interface OpenPayload {
         length?: number;
     };
     bootScreen?: boolean;
+    casino?: {
+        games?: string[];
+    };
     music?: {
         youtube?: boolean;
         anyAudio?: boolean;
@@ -83,6 +87,29 @@ export interface WifiState {
     connected: WifiNetwork | null;
     networks: WifiNetwork[];
     providesData?: boolean;
+}
+
+export type IdCardKind = 'state' | 'licence' | 'job';
+
+export interface IdCardField { key: string; value: string }
+
+export interface IdCardData {
+    key:       string;
+    kind:      IdCardKind;
+    title:     string;
+    subtitle?: string;
+    color:     string;
+    name:      string;
+    portrait:  string | null;
+    issuer:    string;
+    fields:    IdCardField[];
+}
+
+export interface ReceivedIdCard {
+    id:        string;
+    card:      IdCardData;
+    fromName:  string;
+    expiresAt: number;
 }
 
 export interface AppDef {
@@ -333,7 +360,8 @@ export type NuiMessage =
     | { action: 'sd-phone:camera:lock';           data: { on: boolean } }
     | { action: 'sd-phone:camera:faceCam';        data: { on: boolean } }
     | { action: 'sd-phone:photos:added';          data: { id: string; url: string; createdAt: string } }
-    | { action: 'sd-phone:photos:uploadFailed';   data: string }
+    | { action: 'sd-phone:id:received';           data: ReceivedIdCard }
+    | { action: 'sd-phone:photos:uploadFailed';   data: { code?: string } }
     | { action: 'sd-phone:groups:inviteReceived'; data: GroupInvitePush }
     | { action: 'sd-phone:groups:memberJoined';   data: GroupRosterPush }
     | { action: 'sd-phone:groups:memberLeft';     data: GroupRosterPush }
@@ -497,7 +525,7 @@ export type NuiMessage =
     | { action: 'wordle:start';        data: { gameId: string; color: string; opponent: string; pot: number } }
     | { action: 'wordle:move';         data: { gameId: string; move: { rows: string[][]; solved: boolean; failed: boolean; tries: number; finishMs: number } } }
     | { action: 'wordle:ended';        data: { reason: string } }
-    | { action: 'sd-phone:notification';       data: { id?: string; app?: string; image?: string; title: string; body?: string; time?: string; appId?: string; quietInApp?: boolean; otherPhone?: boolean; phoneColor?: string; profileKey?: string; link?: Record<string, unknown> } }
+    | { action: 'sd-phone:notification';       data: { id?: string; app?: string; image?: string; title: string; body?: string; time?: string; appId?: string; quietInApp?: boolean; emergency?: boolean; otherPhone?: boolean; phoneColor?: string; profileKey?: string; link?: Record<string, unknown> } }
     | { action: 'sd-phone:badges';             data: Record<string, number> }
     | { action: 'sd-phone:badges:patch';       data: Record<string, number> }
     | { action: 'sd-phone:airshare';           data: { id: string; kind: string; fromName: string } }

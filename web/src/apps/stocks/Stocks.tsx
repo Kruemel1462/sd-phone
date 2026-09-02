@@ -17,6 +17,8 @@ import {
 } from './data';
 import { t } from '@/i18n';
 import { useStreamerHidden } from '@/stores/themeStore';
+import { failText } from '@/core/api';
+import { StatusBarSpacer } from '@/ui/StatusBarSpacer';
 
 const HISTORY_CAP = 48;
 
@@ -92,7 +94,7 @@ export function Stocks({ onClose }: { onClose: () => void }) {
           : trade.mode === 'withdraw' ? await withdraw(amount)
           : trade.mode === 'buy'      ? await buy(trade.symbol!, amount)
           :                             await sell(trade.symbol!, all ? { all: true } : { amount });
-        if (!r.success) return r.message ?? t('stocks.somethingWrong', 'Something went wrong');
+        if (!r.success) return failText(r, t('stocks.somethingWrong', 'Something went wrong'));
         await refresh();
         return null;
     }
@@ -107,7 +109,7 @@ export function Stocks({ onClose }: { onClose: () => void }) {
 
     return (
         <div className="absolute inset-0 z-10 flex flex-col bg-base text-black dark:text-white">
-            <div className="h-[61px] shrink-0" aria-hidden />
+            <StatusBarSpacer />
 
             <div className="px-5 pb-1 pt-1 text-[34px] font-bold tracking-tight">{t('stocks.stocks', 'Stocks')}</div>
 
